@@ -1,0 +1,25 @@
+# Local tools, tests, and runtime data
+.crush/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.log
+*.lock
+*.bak
+*.bak.*
+*~
+
+# Historical machine inventories (preserved locally)
+/docs/engineering-audit.md
+/docs/sound-inventory.json
+/docs/sound-inventory.tsv
+/docs/sound-summary.json
+/docs/sound-report.md
+
+# Unmapped source clips; canonical event assets are tracked instead
+/sounds/CommunicatorBeep_HV.157.wav
+/sounds/ComputerBeep_S011SF.196.wav
+/sounds/FF_SFFX_foley_computer_black.wav
+/sounds/HoverRobotPassBy_S011SF.427.wav
+/sounds/MO_EMMA_fx_ui_mail_sent_Bb.wav
+/sounds/notification-critrical.wav

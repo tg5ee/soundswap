@@ -47,7 +47,7 @@ Put files in `~/.config/omarchy-sounds/sounds/` named after the event
 | `battery-critical` | Critical battery | Battery at or below 5% |
 | **Omarchy** | | |
 | `theme-change` | Theme changed | You switch Omarchy theme |
-| `update-complete` | Update finished | omarchy update completes |
+| `update-complete` | System packages updated | Packages and migrations finish; other update stages may follow |
 
 Files placed in this repo's `sounds/` folder get copied in on install
 (your existing files are never overwritten).
@@ -76,6 +76,7 @@ omarchy-sounds status           # what's on, which files are present
 omarchy-sounds off | on | toggle
 omarchy-sounds disable click    # turn off one event
 omarchy-sounds volume 0.4
+omarchy-sounds event-volume click 0.5  # gain multiplied by master volume
 omarchy-sounds test [event]
 omarchy-sounds preview <event>  # plays even if that event is switched off
 omarchy-sounds events           # list every event and its trigger
@@ -83,6 +84,16 @@ omarchy-sounds log [on|off]     # watch triggers live, for troubleshooting
 ```
 
 Changes take effect immediately; no Hyprland reload needed.
+
+`config.example` records the working installation's preferences: click, critical
+notification, and both battery cues are disabled; master volume is 0.6. Debug
+logging is off in the example. The installer preserves existing settings and
+uses `config.default` for a new installation. Apply individual preferences with
+the CLI or panel; the example is not installed automatically.
+
+The repository includes the 25 event clips used by the working installation.
+The two battery events have no clips and remain silent. See
+[`sounds/SOURCES.md`](sounds/SOURCES.md) for provenance and intentional reuse.
 
 ## How it works
 
@@ -92,7 +103,8 @@ Changes take effect immediately; no Hyprland reload needed.
 | Non-consuming Hyprland binds (the key still does its job) | mouse clicks, volume keys, Super tap (release bind that only fires on a lone tap) |
 | `omarchy-sounds-daemon` (`omarchy-sounds.service`) | lock/unlock (omarchy-shell's lock log in the user journal), notifications and screenshots (session D-Bus; normal ones respect Do Not Disturb), USB (udev) and Bluetooth (BlueZ) devices, charger and critical battery (UPower) |
 | Omarchy hooks (`~/.config/omarchy/hooks/*.d/omarchy-sounds`) | battery-low, theme-set, post-update |
-| `omarchy-sounds-shutdown.service` | shutdown: plays in `ExecStop`, ordered before PipeWire stops. Also plays on logout. |
+| Omarchy Shutdown menu action | Plays `shutdown` to completion before Omarchy starts poweroff. |
+| `omarchy-sounds-shutdown.service` | Fallback `ExecStop` playback for other shutdown paths, reboot, and logout. Skips a duplicate after the menu action. |
 
 Device sounds are skipped for 8 seconds after resuming from suspend and never
 repeat within a second, so reconnect bursts don't machine-gun. Everything calls
@@ -105,3 +117,22 @@ it, so adding an event there (plus whatever fires it) is all it takes.
 
 `omarchy-sounds log on`, then `omarchy-sounds log` shows every trigger as it
 happens, whether or not a sound file exists for it.
+
+### Development checks
+
+Run from the checkout; lifecycle tests use temporary homes and fake desktop and
+audio commands, so they do not shut down or alter the active desktop:
+
+```bash
+python3 -m unittest discover -s tests -v
+node tests/test_panel.js
+lua tests/test_hypr.lua
+luac -p hypr/omarchy_sounds.lua
+shellcheck bin/* share/common.sh install.sh uninstall.sh hooks/*
+git diff --check
+```
+
+These checks cover parsing, playback routing, watcher cleanup, UI state changes,
+and safe install/uninstall behavior. Real login, lock/unlock, reboot, logout, and
+shutdown audibility require separate desktop testing. In particular, the late
+shutdown-service fallback may run after session audio has begun closing.

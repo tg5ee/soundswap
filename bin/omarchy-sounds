@@ -1,21 +1,13 @@
 #!/usr/bin/env bash
 # omarchy-sounds — control Omarchy Sounds.
 
-conf="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-sounds"
-cfg="$conf/config"
-
-# The event list: installed copy first, then the repo copy (running from a checkout).
-events_file="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-sounds/events.tsv"
-[ -f "$events_file" ] || events_file="$(dirname "$(readlink -f "$0")")/../share/events.tsv"
-[ -f "$events_file" ] || { echo "Can't find events.tsv — run install.sh again." >&2; exit 1; }
-
-# EVENTS=(ids…), plus label/hint/group/icon per id
-declare -A LABEL HINT GROUP ICON
-EVENTS=()
-while IFS=$'\t' read -r id label hint group icon; do
-  [[ -z $id || $id == \#* ]] && continue
-  EVENTS+=("$id"); LABEL[$id]=$label; HINT[$id]=$hint; GROUP[$id]=$group; ICON[$id]=$icon
-done < "$events_file"
+# Prefer the checkout helper when running from source.
+base="$(dirname "$(readlink -f "$0")")"
+common="$base/../share/common.sh"
+[[ -f $common ]] || common="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-sounds/common.sh"
+# shellcheck source=share/common.sh
+source "$common" || exit 1
+player="$base/omarchy-sounds-play"
 
 usage() {
   cat <<USAGE
@@ -27,47 +19,30 @@ Usage: omarchy-sounds <command>
   enable EVENT         Turn one event on
   disable EVENT        Turn one event off
   volume 0.0-1.0       Set playback volume
+  event-volume EVENT N Set event gain (0.0-1.0), multiplied by master volume
   test [EVENT]         Play one event, or all of them in turn
   preview EVENT        Play one event even if it's switched off
+  poweroff             Play shutdown before Omarchy starts poweroff
   dir                  Print the sounds folder
   log [on|off]         Record every trigger; with no argument, watch the log
   json                 Print settings as JSON (used by the bar panel)
 USAGE
 }
 
-setvar() {  # setvar KEY VALUE
-  if grep -q "^$1=" "$cfg"; then sed -i "s|^$1=.*|$1=$2|" "$cfg"; else echo "$1=$2" >> "$cfg"; fi
-}
+read_config
 
-evvar() { local v=${1^^}; echo "${v//-/_}"; }
-
-sound_file() {  # first matching file for an event, same order omarchy-sounds-play uses
-  local ext
-  for ext in wav ogg oga flac mp3; do
-    [ -f "$conf/sounds/$1.$ext" ] && { echo "$conf/sounds/$1.$ext"; return; }
-  done
-}
-
-json_str() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; printf '"%s"' "$s"; }
-
-valid_event() {
-  [[ -n $1 && -n ${LABEL[$1]+x} ]] && return 0
-  echo "Unknown event '$1'. See: omarchy-sounds events" >&2; exit 1
-}
-
-[ -f "$cfg" ] || { echo "No config at $cfg — run install.sh first." >&2; exit 1; }
-
-case "$1" in
+case "${1:-}" in
   status)
-    . "$cfg"
+    read_config
     echo "Sounds: $([ "$ENABLED" = 1 ] && echo on || echo off)   Volume: $VOLUME"
     echo "Folder: $conf/sounds"
     last=
     for e in "${EVENTS[@]}"; do
       [ "${GROUP[$e]}" != "$last" ] && { last=${GROUP[$e]}; printf '\n  %s\n' "$last"; }
-      v=$(evvar "$e"); state=$([ "${!v:-1}" = 1 ] && echo on || echo off)
-      f=$(sound_file "$e")
-      printf '    %-22s %-4s %s\n' "$e" "$state" "${f:+${f##*/}}${f:-(no file yet)}"
+      v=${e^^}; v=${v//-/_}; state=off; [[ ${!v} == 1 ]] && state=on
+      sound_file "$e"; name=${file##*/}
+      [[ -n $file ]] || name='(no file yet)'
+      printf '    %-22s %-4s %s\n' "$e" "$state" "$name"
     done ;;
   events)
     last=
@@ -75,39 +50,89 @@ case "$1" in
       [ "${GROUP[$e]}" != "$last" ] && { last=${GROUP[$e]}; printf '\n%s\n' "$last"; }
       printf '  %-22s %s\n' "$e" "${HINT[$e]}"
     done ;;
-  on)      setvar ENABLED 1; echo "Sounds on" ;;
-  off)     setvar ENABLED 0; echo "Sounds off" ;;
-  toggle)  . "$cfg"; if [ "$ENABLED" = 1 ]; then "$0" off; else "$0" on; fi ;;
-  enable)  valid_event "$2"; setvar "$(evvar "$2")" 1; echo "$2 on" ;;
-  disable) valid_event "$2"; setvar "$(evvar "$2")" 0; echo "$2 off" ;;
+  on)      setvar ENABLED 1 || exit 1; echo "Sounds on" ;;
+  off)     setvar ENABLED 0 || exit 1; echo "Sounds off" ;;
+  toggle)  setvar ENABLED toggle || exit 1; read_config; echo "Sounds enabled=$ENABLED" ;;
+  enable)  valid_event "${2:-}" || exit 1; v=${2^^}; setvar "${v//-/_}" 1 || exit 1; echo "$2 on" ;;
+  disable) valid_event "${2:-}" || exit 1; v=${2^^}; setvar "${v//-/_}" 0 || exit 1; echo "$2 off" ;;
   volume)
     [[ $2 =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo "Volume must be between 0.0 and 1.0" >&2; exit 1; }
-    setvar VOLUME "$2"; echo "Volume $2" ;;
+    setvar VOLUME "$2" || exit 1; echo "Volume $2" ;;
+  event-volume)
+    valid_event "${2:-}" || exit 1
+    [[ ${3:-} =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo 'Event volume must be between 0.0 and 1.0' >&2; exit 1; }
+    v=${2^^}; setvar "${v//-/_}_VOLUME" "$3" || exit 1; echo "$2 volume $3" ;;
   test)
-    if [ -n "$2" ]; then valid_event "$2"; omarchy-sounds-play --wait "$2"
-    else for e in "${EVENTS[@]}"; do [ -n "$(sound_file "$e")" ] && { echo "$e"; omarchy-sounds-play --wait "$e"; }; done; fi ;;
-  preview) valid_event "$2"; omarchy-sounds-play --force "$2" ;;
+    if [ -n "$2" ]; then valid_event "$2" || exit 1; bash "$player" --wait "$2"
+    else for e in "${EVENTS[@]}"; do sound_file "$e"; [ -n "$file" ] && { echo "$e"; bash "$player" --wait "$e" || exit; }; done; fi ;;
+  preview) valid_event "${2:-}" || exit 1; bash "$player" --wait --force "$2" ;;
+  poweroff)
+    runtime_dir || exit 1
+    exec 9>"$state/poweroff.lock" || exit 1
+    flock -n 9 || exit 0
+    sound_file shutdown
+    backend=none
+    for candidate in pw-play paplay mpv; do
+      if command -v "$candidate" >/dev/null; then backend=$candidate; break; fi
+    done
+    logger -t omarchy-sounds "shutdown early-start file=${file:-none} backend=$backend" || true
+    bash "$player" --wait shutdown &
+    playback_pid=$!
+    logger -t omarchy-sounds "shutdown playback-pid=$playback_pid" || true
+    if wait "$playback_pid"; then
+      : > "$state/shutdown.preplayed"
+      logger -t omarchy-sounds 'shutdown early-complete status=0' || true
+    else
+      playback_status=$?
+      logger -t omarchy-sounds "shutdown early-failed status=$playback_status" || true
+    fi
+    if omarchy-system-shutdown; then
+      exit 0
+    else
+      shutdown_status=$?
+      rm -f -- "$state/shutdown.preplayed"
+      logger -t omarchy-sounds "shutdown request-failed status=$shutdown_status" || true
+      exit "$shutdown_status"
+    fi ;;
+  shutdown-stop)
+    runtime_dir || exit 1
+    if [[ -f $state/shutdown.preplayed ]]; then
+      marker_age=$(( $(date +%s) - $(stat -c %Y "$state/shutdown.preplayed") ))
+      if (( marker_age >= 0 && marker_age <= 120 )); then
+        rm -f -- "$state/shutdown.preplayed"
+        echo 'shutdown chime already completed before poweroff'
+        exit 0
+      fi
+      rm -f -- "$state/shutdown.preplayed"
+    fi
+    bash "$player" --wait shutdown ;;
   dir)     echo "$conf/sounds" ;;
   log)
-    log="${XDG_RUNTIME_DIR:-/tmp}/omarchy-sounds/events.log"
+    runtime_dir || exit 1; log="$state/events.log"
     case "$2" in
-      on)  setvar LOG 1; echo "Logging triggers to $log" ;;
-      off) setvar LOG 0; echo "Logging off" ;;
-      *)   . "$cfg"; [ "${LOG:-0}" = 1 ] || echo "Logging is off; turn it on with: omarchy-sounds log on"
+      on)  setvar LOG 1 || exit 1; echo "Logging triggers to $log" ;;
+      off) setvar LOG 0 || exit 1; echo "Logging off" ;;
+      '')  read_config; [ "${LOG:-0}" = 1 ] || echo "Logging is off; turn it on with: omarchy-sounds log on"
            mkdir -p "${log%/*}"; touch "$log"; exec tail -f "$log" ;;
+      *)   echo "Unknown log option: $2" >&2; exit 2 ;;
     esac ;;
   json)
-    . "$cfg"
-    printf '{"enabled":%s,"volume":%s,"dir":%s,"events":[' \
-      "$([ "$ENABLED" = 1 ] && echo true || echo false)" "${VOLUME:-0.6}" "$(json_str "$conf/sounds")"
+    enabled=false; [[ $ENABLED == 1 ]] && enabled=true
+    printf '{"enabled":%s,"volume":%s,"dir":' "$enabled" "$VOLUME"
+    json_str "$conf/sounds"
+    printf ',"events":['
     sep=
     for e in "${EVENTS[@]}"; do
-      v=$(evvar "$e"); f=$(sound_file "$e")
-      printf '%s{"id":"%s","label":%s,"hint":%s,"group":%s,"icon":"%s","enabled":%s,"file":%s}' "$sep" "$e" \
-        "$(json_str "${LABEL[$e]}")" "$(json_str "${HINT[$e]}")" "$(json_str "${GROUP[$e]}")" "${ICON[$e]}" \
-        "$([ "${!v:-1}" = 1 ] && echo true || echo false)" "$(json_str "${f##*/}")"
+      v=${e^^}; v=${v//-/_}; sound_file "$e"
+      enabled=false; [[ ${!v} == 1 ]] && enabled=true
+      printf '%s{"id":"%s","label":' "$sep" "$e"
+      json_str "${LABEL[$e]}"; printf ',"hint":'; json_str "${HINT[$e]}"
+      printf ',"group":'; json_str "${GROUP[$e]}"
+      printf ',"icon":"%s","enabled":%s,"file":' "${ICON[$e]}" "$enabled"
+      json_str "${file##*/}"
+      v=${v}_VOLUME; printf ',"volume":%s}' "${!v}"
       sep=,
     done
     printf ']}\n' ;;
-  *)       usage ;;
+  *)       if [[ $# == 0 ]]; then usage; else usage >&2; exit 2; fi ;;
 esac

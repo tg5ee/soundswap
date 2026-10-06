@@ -5,7 +5,8 @@
 -- handled by omarchy-sounds-daemon instead.
 
 local function play(event)
-  return "omarchy-sounds-play " .. event
+  local player = os.getenv("HOME") .. "/.local/bin/omarchy-sounds-play"
+  return "'" .. player:gsub("'", "'\\''") .. "' " .. event
 end
 
 local function on(hypr_event, sound)
@@ -27,8 +28,7 @@ hl.on("window.fullscreen", function(window)
   hl.exec_cmd(play(window and window.fullscreen ~= 0 and "maximize" or "restore"))
 end)
 
--- Workspace switch. This also fires at startup and when focus crosses monitors
--- onto the workspace it already shows, so only play on a real change.
+-- Ordinary workspaces deduplicate identical events; monitor focus has its own event.
 local function workspace_key(workspace)
   return workspace and tostring(workspace.id or workspace.name) or nil
 end
@@ -44,6 +44,9 @@ hl.on("workspace.active", function(workspace)
   end
   last_workspace = id
 end)
+
+-- Scratchpads use a separate native event, on both opening and closing.
+on("workspace.special_active", "workspace")
 
 -- Omarchy menu / launcher, and the password (polkit) prompt, are shell layers.
 hl.on("layer.opened", function(layer)

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import Qt.labs.folderlistmodel
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -81,13 +82,41 @@ Panel {
 
   // ---------- Reading state ----------
 
+  property int stateGeneration: 0
+  property int statusGeneration: 0
+  property bool statusBusy: false
+  property bool refreshPending: false
+  property string errorText: ""
+
   function refresh() {
-    if (!statusProc.running) statusProc.running = true
+    refreshPending = true
+    if (!installed || statusBusy || writeBusy || writeQueue.length > 0) return
+    refreshPending = false
+    statusGeneration = stateGeneration
+    statusBusy = true
+    statusProc.running = true
+  }
+
+  function finishStatus(exitCode, exitStatus) {
+    if (!statusBusy) return
+    statusBusy = false
+    if (statusGeneration === stateGeneration) {
+      if (exitCode !== 0 || exitStatus !== 0)
+        errorText = "Could not read sounds settings. " + statusErrors.text.trim()
+      else applyStatus(statusOutput.text)
+    }
+    if (refreshPending) refresh()
   }
 
   function applyStatus(raw) {
+    if (statusGeneration !== stateGeneration || writeBusy || writeQueue.length > 0) return
     var data
-    try { data = JSON.parse(raw) } catch (e) { return }
+    try {
+      data = JSON.parse(raw)
+      if (!data || typeof data.enabled !== "boolean" || !Array.isArray(data.events)
+          || typeof data.volume !== "number" || !Number.isFinite(data.volume) || data.volume < 0 || data.volume > 1)
+        throw new Error("Invalid settings")
+    } catch (e) { errorText = "Could not read sounds settings: invalid response."; return }
     soundsOn = data.enabled === true
     if (!volumeSlider.dragging) volume = Number(data.volume)
     if (data.dir) soundsDir = data.dir
@@ -105,6 +134,7 @@ Panel {
       })
     }
     events = next
+    if (!writeFailed) errorText = ""
   }
 
   // ---------- Changing state ----------
@@ -113,17 +143,48 @@ Panel {
   // by the refresh that follows the write.
 
   property var writeQueue: []
+  property bool writeBusy: false
+  property bool writeFailed: false
+  property bool previewRequested: false
 
   function write(args) {
+    if (!installed) return
+    if (!writeBusy && writeQueue.length === 0) { writeFailed = false; errorText = "" }
+    stateGeneration++
+    refreshPending = true
+    volumePreview.stop()
+    if (args[0] === "volume") writeQueue = writeQueue.filter(function(command) { return command[0] !== "volume" })
     writeQueue = writeQueue.concat([args])
     pumpWrites()
   }
 
   function pumpWrites() {
-    if (writeProc.running || writeQueue.length === 0) return
+    if (writeBusy || writeQueue.length === 0) return
     writeProc.command = ["omarchy-sounds"].concat(writeQueue[0])
     writeQueue = writeQueue.slice(1)
+    writeBusy = true
     writeProc.running = true
+  }
+
+  function finishWrite(exitCode, exitStatus) {
+    if (!writeBusy) return
+    writeBusy = false
+    if (exitCode !== 0 || exitStatus !== 0) {
+      writeFailed = true
+      previewRequested = false
+      errorText = "Could not save sounds settings. " + writeErrors.text.trim()
+    }
+    if (writeQueue.length > 0) pumpWrites()
+    else {
+      if (previewRequested && !writeFailed) volumePreview.restart()
+      refresh()
+    }
+  }
+
+  function flushVolumePreview() {
+    if (!installed || writeBusy || writeQueue.length > 0 || writeFailed || !previewRequested) return
+    previewRequested = false
+    previewVolume()
   }
 
   function setSoundsOn(on) {
@@ -135,6 +196,7 @@ Panel {
   function toggleSounds() { setSoundsOn(!soundsOn) }
 
   function toggleEvent(id) {
+    if (!installed || !findEvent(id)) return
     var next = []
     var on = false
     for (var i = 0; i < events.length; i++) {
@@ -150,10 +212,11 @@ Panel {
   }
 
   function setVolume(v) {
+    if (!installed || !Number.isFinite(v)) return
     v = Math.round(Math.max(0, Math.min(1, v)) * 20) / 20
     volume = v
+    previewRequested = true
     write(["volume", v.toFixed(2)])
-    volumePreview.restart()
   }
 
   function preview(id) {
@@ -250,22 +313,41 @@ Panel {
   Process {
     id: statusProc
     command: ["omarchy-sounds", "json"]
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.applyStatus(text) }
+    stdout: StdioCollector { id: statusOutput; waitForEnd: true }
+    stderr: StdioCollector { id: statusErrors; waitForEnd: true }
+    onExited: function(code, status) { root.finishStatus(code, status) }
+    // Process exposes no failedToStart signal. A failed launch only changes
+    // running; defer so an ordinary exit can complete through onExited first.
+    onRunningChanged: if (!running) Qt.callLater(function() {
+      if (root.statusBusy && !statusProc.running) root.finishStatus(-1, 1)
+    })
   }
 
   Process {
     id: writeProc
-    onExited: {
-      if (root.writeQueue.length > 0) root.pumpWrites()
-      else root.refresh()
-    }
+    stderr: StdioCollector { id: writeErrors; waitForEnd: true }
+    onExited: function(code, status) { root.finishWrite(code, status) }
+    onRunningChanged: if (!running) Qt.callLater(function() {
+      if (root.writeBusy && !writeProc.running) root.finishWrite(-1, 1)
+    })
   }
 
-  Timer { id: volumePreview; interval: 180; onTriggered: root.previewVolume() }
+  Timer { id: volumePreview; interval: 180; onTriggered: root.flushVolumePreview() }
 
-  // New sound files don't touch the config, so look again while the panel is
-  // open, and occasionally otherwise so the bar icon tracks CLI changes.
-  Timer { interval: root.opened ? 3000 : 20000; running: root.installed; repeat: true; onTriggered: root.refresh() }
+  // Native file notifications also catch renames that leave the count alone.
+  FolderListModel {
+    id: soundFiles
+    folder: Util.fileUrl(root.soundsDir)
+    showDirs: false
+  }
+  Connections {
+    target: soundFiles
+    function onRowsInserted() { directoryRefresh.restart() }
+    function onRowsRemoved() { directoryRefresh.restart() }
+    function onDataChanged() { directoryRefresh.restart() }
+    function onModelReset() { directoryRefresh.restart() }
+  }
+  Timer { id: directoryRefresh; interval: 100; onTriggered: root.refresh() }
 
   BarIconButton {
     id: button
@@ -403,6 +485,17 @@ Panel {
             textFormat: Text.PlainText
             text: "Run install.sh from the omarchy-sounds folder to set up the sound hooks."
             color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            visible: root.errorText !== ""
+            width: parent.width
+            textFormat: Text.PlainText
+            text: root.errorText
+            color: root.fg
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             wrapMode: Text.WordWrap

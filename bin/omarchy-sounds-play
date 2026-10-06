@@ -1,53 +1,107 @@
 #!/usr/bin/env bash
-# omarchy-sounds-play [--wait] [--force] EVENT
-# Plays ~/.config/omarchy-sounds/sounds/EVENT.{wav,ogg,oga,flac,mp3} if the event
-# is enabled (--force skips the on/off checks, for previews). Silent (exit 0) when the file is missing, so you can add sounds later.
-# Kept lean on purpose: this runs on every mouse click.
+# One playback path for hooks, CLI and previews. No persistent audio connection.
+base="$(dirname "$(readlink -f "$0")")"
+common="$base/../share/common.sh"
+[[ -f $common ]] || common="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-sounds/common.sh"
+# shellcheck source=share/common.sh
+source "$common" || exit 1
 
 wait=0 force=0
 while :; do
-  case "$1" in
-    --wait)  wait=1; shift ;;
+  case ${1:-} in
+    --wait) wait=1; shift ;;
     --force) force=1; shift ;;
     *) break ;;
   esac
 done
-event=$1
-[ -n "$event" ] || exit 0
-
-conf="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-sounds"
-ENABLED=1 VOLUME=0.6
-[ -f "$conf/config" ] && . "$conf/config"
-# `omarchy-sounds log on` records every trigger, played or not, for troubleshooting
-if [ "${LOG:-0}" = 1 ]; then
-  log_dir="${XDG_RUNTIME_DIR:-/tmp}/omarchy-sounds"
-  mkdir -p "$log_dir" && printf '%(%T)T %s\n' -1 "$event" >> "$log_dir/events.log"
-fi
-
-if [ "$force" = 0 ]; then
-  [ "$ENABLED" = 1 ] || exit 0
-  # startup -> STARTUP, window-open -> WINDOW_OPEN
-  var=${event^^}; var=${var//-/_}
-  [ "${!var:-1}" = 1 ] || exit 0
-fi
-
+event=${1:-}
+valid_event "$event" || exit 2
+read_config
 file=
-for ext in wav ogg oga flac mp3; do
-  [ -f "$conf/sounds/$event.$ext" ] && { file="$conf/sounds/$event.$ext"; break; }
-done
-[ -n "$file" ] || exit 0
 
-if command -v pw-play >/dev/null; then
-  cmd=(pw-play --volume "$VOLUME" "$file")
-elif command -v paplay >/dev/null; then
-  cmd=(paplay --volume "$(awk -v v="$VOLUME" 'BEGIN{printf "%d", v*65536}')" "$file")
-else
-  cmd=(mpv --no-video --really-quiet --volume="$(awk -v v="$VOLUME" 'BEGIN{printf "%d", v*100}')" "$file")
+log_result() (
+  [[ $LOG == 1 ]] || return 0
+  runtime_dir || return 1
+  exec 8>"$state/log.lock" || return 1
+  flock -w 1 8 || return 1
+  # Debug only: keep at most two 1 MiB logs, including during event storms.
+  if [[ -f $state/events.log ]] && [[ $(stat -c %s "$state/events.log") -ge 1048576 ]]; then
+    mv -- "$state/events.log" "$state/events.log.1" || return 1
+  fi
+  printf '%(%FT%T%z)T EVENT=%s RULE=%s SOUND=%q RESULT=%s\n' -1 "$event" "$1" "${file:-none}" "$2" >> "$state/events.log"
+)
+
+if [[ $force == 0 ]]; then
+  [[ $ENABLED == 1 ]] || { log_result master disabled; exit 0; }
+  var=${event^^}; var=${var//-/_}
+  [[ ${!var} == 1 ]] || { log_result event disabled; exit 0; }
 fi
+sound_file "$event"
+[[ -n $file ]] || { log_result file missing; exit 0; }
+var=${event^^}; var=${var//-/_}_VOLUME
+if [[ ${!var} != 1 ]]; then
+  VOLUME=$(awk -v master="$VOLUME" -v gain="${!var}" 'BEGIN {printf "%.6g", master*gain}')
+fi
+runtime_dir || { echo 'Cannot create private sound runtime directory' >&2; exit 1; }
 
-if [ "$wait" = 1 ]; then
-  "${cmd[@]}" >/dev/null 2>&1
+play_sound() (
+  # Only this event is suppressed; alerts can play beside an input cue.
+  exec 9>"$state/$event.lock" || exit 1
+  if [[ $force == 1 || ( $wait == 1 && $event == shutdown ) ]]; then
+    flock -w 12 9 || { log_result overlap busy; echo 'Playback is busy; try again' >&2; exit 75; }
+  else
+    flock -n 9 || { log_result overlap suppressed; exit 0; }
+  fi
+  local now last=0 gap=0 elapsed rc
+  now=${EPOCHREALTIME/./}
+  case $event in
+    device-connect|device-disconnect) gap=1000000 ;;
+    click) gap=100000 ;;
+    workspace|volume-keys) gap=75000 ;;
+    notification|notification-critical) gap=150000 ;;
+  esac
+  [[ -f $state/$event.last ]] && read -r last < "$state/$event.last"
+  [[ $last =~ ^[0-9]{1,18}$ ]] || last=0
+  elapsed=$((now - last))
+  if [[ $force == 0 ]] && (( elapsed >= 0 && elapsed < gap )); then
+    log_result cooldown suppressed; exit 0
+  fi
+
+  local -a cmd
+  local gain
+  if command -v pw-play >/dev/null; then
+    cmd=(pw-play --media-role Event --volume "$VOLUME" "$file")
+  elif command -v paplay >/dev/null; then
+    gain=$(awk -v v="$VOLUME" 'BEGIN {printf "%d", v*65536}')
+    cmd=(paplay --volume "$gain" "$file")
+  elif command -v mpv >/dev/null; then
+    gain=$(awk -v v="$VOLUME" 'BEGIN {printf "%d", v*100}')
+    cmd=(mpv --no-config --no-video --really-quiet --volume="$gain" -- "$file")
+  else
+    log_result backend unavailable
+    echo 'No sound player available (pw-play, paplay or mpv)' >&2
+    exit 127
+  fi
+  printf '%s\n' "$now" > "$state/$event.last"
+  # A short click's tail may overlap the next deliberate click. Its timestamp
+  # still bounds concurrency; longer event sounds retain the playback lock.
+  [[ $event == click && $force == 0 ]] && flock -u 9
+  log_result enabled started
+  timeout --kill-after=1s 10s "${cmd[@]}" > /dev/null 2>"$state/$event.error"
+  rc=$?
+  if (( rc == 0 )); then
+    log_result enabled success
+  else
+    log_result backend "failed:$rc"
+    printf 'omarchy-sounds: %s -> %s -> playback failed (%s)\n' "$event" "${file##*/}" "$rc" >&2
+    # Backend diagnostic is retained in the private runtime directory.
+  fi
+  exit "$rc"
+)
+
+if [[ $wait == 1 ]]; then
+  play_sound
 else
-  "${cmd[@]}" >/dev/null 2>&1 &
+  play_sound </dev/null >/dev/null &
   disown
 fi

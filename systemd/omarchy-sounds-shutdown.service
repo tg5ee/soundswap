@@ -1,14 +1,16 @@
 [Unit]
 Description=Omarchy Sounds shutdown chime
+PartOf=graphical-session.target
 # Stopped before the audio stack on poweroff/reboot/logout, so the sound can still play.
 After=pipewire.service pipewire-pulse.service wireplumber.service
 
 [Service]
+Environment="PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/bin/true
-ExecStop=%h/.local/bin/omarchy-sounds-play --wait shutdown
-TimeoutStopSec=8
+ExecStop=%h/.local/bin/omarchy-sounds shutdown-stop
+TimeoutStopSec=25
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target

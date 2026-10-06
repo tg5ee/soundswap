@@ -28,4 +28,4 @@ charger-disconnect	Charger unplugged	Running on battery	Devices & power	f06a6
 battery-low	Low battery	Omarchy's 10% warning	Devices & power	f0083
 battery-critical	Critical battery	Battery at or below 5%	Devices & power	f10cd
 theme-change	Theme changed	You switch Omarchy theme	Omarchy	f03d8
-update-complete	Update finished	omarchy update completes	Omarchy	f06b0
+update-complete	System packages updated	System packages and migrations finish; other update stages may follow	Omarchy	f06b0

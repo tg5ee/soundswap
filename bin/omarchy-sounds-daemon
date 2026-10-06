@@ -1,49 +1,43 @@
 #!/usr/bin/env bash
-# omarchy-sounds-daemon — plays sounds for events Hyprland can't see.
-# Runs as omarchy-sounds.service; each watcher is a small pipeline that turns
-# a system event stream into omarchy-sounds-play calls.
-#
-#   lock / unlock                  omarchy-shell's lock log in the user journal
-#   notification(-critical)        Notify calls on the session bus
-#   screenshot                     Omarchy's "Screenshot saved" notification
-#   device-connect / -disconnect   udev (USB) and BlueZ (Bluetooth)
-#   charger-connect / -disconnect  UPower OnBattery
-#   battery-critical               UPower battery percentage
-#
-# If any watcher exits, the daemon exits too and systemd restarts the lot.
+# Watch session event streams. Each watcher owns a process group, so stopping
+# this service cannot signal another process in the caller's group.
+base="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+common="$base/../share/common.sh"
+[[ -f $common ]] || common="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-sounds/common.sh"
+# shellcheck source=share/common.sh
+source "$common" || exit 1
+runtime_dir || { echo 'Cannot create private sound runtime directory' >&2; exit 1; }
+player="$base/omarchy-sounds-play"
+[[ -x $player ]] || player="$HOME/.local/bin/omarchy-sounds-play"
+play() { "$player" "$1"; }
 
-conf="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-sounds"
-state="${XDG_RUNTIME_DIR:-/tmp}/omarchy-sounds"
-mkdir -p "$state"
-
-play() { omarchy-sounds-play "$1"; }
-
-# Devices reconnect in bursts after resume or when a hub is plugged in, so after
-# waking we stay quiet for a few seconds and never play the same device sound
-# twice within a second.
 quiet() {
   local until=0
-  [ -f "$state/quiet-until" ] && read -r until < "$state/quiet-until"
-  (( $(date +%s) < until ))
+  [[ -f $state/quiet-until ]] && read -r until < "$state/quiet-until"
+  [[ $until =~ ^[0-9]{1,12}$ ]] && (( $(date +%s) < until ))
+}
+
+set_quiet() {
+  local tmp
+  tmp=$(mktemp "$state/.quiet.XXXXXX") || return 1
+  printf '%s\n' "$(($(date +%s) + $1))" > "$tmp"
+  mv -- "$tmp" "$state/quiet-until"
 }
 
 on_ac() {
   local supply type online
   for supply in /sys/class/power_supply/*; do
-    read -r type < "$supply/type" 2>/dev/null
-    [ "$type" = Mains ] || continue
-    read -r online < "$supply/online" 2>/dev/null
-    [ "$online" = 1 ] && return 0
+    [[ -r $supply/type ]] || continue
+    read -r type < "$supply/type"
+    [[ $type == Mains && -r $supply/online ]] || continue
+    read -r online < "$supply/online"
+    [[ $online == 1 ]] && return 0
   done
   return 1
 }
 
-declare -A last_played
 device_sound() {
-  quiet && return
-  local now; now=$(date +%s%N)
-  (( now - ${last_played[$1]:-0} < 1000000000 )) && return
-  last_played[$1]=$now
+  quiet && return 0
   play "$1"
 }
 
@@ -52,38 +46,34 @@ watch_lock() {
     while IFS= read -r line; do
       case $line in
         *"omarchy lock "*" secure=true"*) play lock ;;
-        *"omarchy lock "*" unlocked"*)    play unlock ;;
+        *"omarchy lock "*" unlocked"*) play unlock ;;
       esac
     done
 }
 
-# dbus-monitor prints each Notify call over several lines; awk folds them into
-# "replaces_id<TAB>urgency<TAB>summary". Argument order: app, replaces_id, icon,
-# summary, body, actions, hints, timeout (the only top-level int32).
 watch_notifications() {
   dbus-monitor --session "type='method_call',interface='org.freedesktop.Notifications',member='Notify'" 2>/dev/null |
     awk '
-      /member=Notify$/ { inmsg = 1; strings = 0; replaces = 0; urgency = 1; summary = ""; next }
+      /member=Notify$/ { inmsg=1; strings=0; replaces=0; urgency=1; summary=""; want_urgency=0; next }
       !inmsg { next }
-      /^   uint32 / { replaces = $2 }
+      /^   uint32 / { replaces=$2 }
       /^   string / {
         strings++
-        if (strings == 3) { summary = $0; sub(/^   string "/, "", summary); sub(/"$/, "", summary) }
+        if (strings == 3) { summary=$0; sub(/^   string "/, "", summary); sub(/"$/, "", summary) }
       }
-      /string "urgency"/ { want_urgency = 1; next }
-      want_urgency && /variant/ { urgency = $NF; want_urgency = 0 }
-      /^   int32 / { printf "%s\t%s\t%s\n", replaces, urgency, summary; fflush(); inmsg = 0 }
+      /string "urgency"/ { want_urgency=1; next }
+      want_urgency && /variant/ { urgency=$NF; want_urgency=0 }
+      /^   int32 / { printf "%s\t%s\t%s\n", replaces, urgency, summary; fflush(); inmsg=0; want_urgency=0 }
     ' |
     while IFS=$'\t' read -r replaces urgency summary; do
-      # Updates to an existing notification (progress bars etc.) stay quiet.
-      [ "$replaces" != 0 ] && continue
+      [[ $replaces == 0 ]] || continue
       case $summary in
         "Screenshot saved"*) play screenshot; continue ;;
-        "Time to recharge!") continue ;;  # the battery-low hook plays that one
+        "Time to recharge!") continue ;;
       esac
-      if [ "$urgency" = 2 ]; then
+      if [[ $urgency == 2 ]]; then
         play notification-critical
-      elif [ "$(omarchy-shell notifications isDnd 2>/dev/null)" != on ]; then
+      elif [[ $(timeout 2s omarchy-shell notifications isDnd 2>/dev/null) == off ]]; then
         play notification
       fi
     done
@@ -93,7 +83,7 @@ watch_usb() {
   udevadm monitor --udev --subsystem-match=usb/usb_device |
     while read -r _ _ action _; do
       case $action in
-        add)    device_sound device-connect ;;
+        add) device_sound device-connect ;;
         remove) device_sound device-disconnect ;;
       esac
     done
@@ -104,45 +94,95 @@ watch_bluetooth() {
     while IFS= read -r line; do
       [[ $line == *"'org.bluez.Device1'"* ]] || continue
       case $line in
-        *"'Connected': <true>"*)  device_sound device-connect ;;
+        *"'Connected': <true>"*) device_sound device-connect ;;
         *"'Connected': <false>"*) device_sound device-disconnect ;;
       esac
     done
 }
 
 watch_power() {
-  local critical_sent=0 level threshold
+  local critical_sent=0 level threshold on_battery=unknown
+  local percentage_re="'Percentage': <([^>]+)>"
   gdbus monitor --system --dest org.freedesktop.UPower |
     while IFS= read -r line; do
       case $line in
-        *"'OnBattery': <false>"*) play charger-connect; critical_sent=0 ;;
-        *"'OnBattery': <true>"*)  play charger-disconnect ;;
+        *"'OnBattery': <false>"*) on_battery=0; play charger-connect; critical_sent=0 ;;
+        *"'OnBattery': <true>"*) on_battery=1; play charger-disconnect ;;
       esac
-      if [[ $line == /org/freedesktop/UPower/devices/DisplayDevice:* && $line =~ \'Percentage\':\ \<([0-9.]+)\> ]]; then
-        level=${BASH_REMATCH[1]%.*}
-        CRITICAL_BATTERY_LEVEL=5; [ -f "$conf/config" ] && . "$conf/config"
+      if [[ $line == /org/freedesktop/UPower/devices/DisplayDevice:* && $line =~ $percentage_re ]]; then
+        level=${BASH_REMATCH[1]}
+        [[ $level =~ ^(0|[1-9][0-9]?|100)(\.[0-9]+)?$ ]] || continue
+        read_config
         threshold=$CRITICAL_BATTERY_LEVEL
-        if (( level <= threshold )) && [ "$critical_sent" = 0 ] && ! on_ac; then
+        if awk -v level="$level" -v threshold="$threshold" 'BEGIN {exit !(level <= threshold)}' &&
+          (( ! critical_sent )) && { [[ $on_battery == 1 ]] || { [[ $on_battery == unknown ]] && ! on_ac; }; }; then
           play battery-critical; critical_sent=1
-        elif (( level > threshold + 2 )); then
+        elif awk -v level="$level" -v threshold="$threshold" 'BEGIN {exit !(level > threshold + 2)}'; then
           critical_sent=0
         fi
       fi
     done
 }
 
-# Resume from suspend: quiet period for the device reconnect burst.
 watch_sleep() {
   gdbus monitor --system --dest org.freedesktop.login1 --object-path /org/freedesktop/login1 |
     while IFS= read -r line; do
-      [[ $line == *"PrepareForSleep (false"* ]] && echo $(( $(date +%s) + 8 )) > "$state/quiet-until"
+      case $line in
+        *"PrepareForSleep (true"*) set_quiet 3600 ;;
+        *"PrepareForSleep (false"*) set_quiet 8 ;;
+      esac
     done
 }
 
-# Sourcing the file (for tests) defines the watchers without starting them.
+# Sourcing this file permits isolated stream tests without starting the service.
 [[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
 
-trap 'kill 0 2>/dev/null' EXIT
-watch_lock & watch_notifications & watch_usb & watch_bluetooth & watch_power & watch_sleep &
-wait -n
-exit 1
+watchers=(lock notifications usb bluetooth power sleep)
+if [[ ${1:-} == --watch ]]; then
+  name=${2:-}
+  [[ " ${watchers[*]} " == *" $name "* ]] || { echo "Unknown watcher: $name" >&2; exit 2; }
+  group=$(ps -o pgid= -p $$) || exit 1
+  [[ ${group//[[:space:]]/} == "$$" ]] || { echo 'Watcher must run in an isolated process group' >&2; exit 2; }
+  "watch_$name"
+  exit 1  # An event stream ending is always a failure and should be retried.
+fi
+[[ $# == 0 ]] || { echo 'Usage: omarchy-sounds-daemon' >&2; exit 2; }
+exec 9>"$state/daemon.lock" || exit 1
+flock -n 9 || { echo 'Omarchy Sounds watcher is already running' >&2; exit 1; }
+
+declare -A pids=() warned=()
+start_watcher() {
+  local name=$1
+  setsid "$0" --watch "$name" 9>&- &
+  pids[$name]=$!
+}
+cleanup() {
+  local name pid
+  trap - EXIT
+  for name in "${watchers[@]}"; do
+    pid=${pids[$name]:-}
+    [[ -n $pid ]] && kill -TERM -- "-$pid" 2>/dev/null || :
+  done
+  wait 2>/dev/null || :
+}
+trap cleanup EXIT
+trap 'exit 0' TERM INT
+for name in "${watchers[@]}"; do start_watcher "$name"; done
+while :; do
+  ended=
+  wait -n -p ended "${pids[@]}" 2>/dev/null || :
+  [[ -n $ended ]] || exit 1
+  for name in "${watchers[@]}"; do
+    [[ ${pids[$name]} == "$ended" ]] || continue
+    # The leader may have died while its pipeline children kept running.
+    # Their isolated process group still has the leader's PID as its PGID.
+    kill -TERM -- "-$ended" 2>/dev/null || :
+    if [[ -z ${warned[$name]:-} ]]; then
+      echo "Watcher $name ended; retrying" >&2
+      warned[$name]=1
+    fi
+    sleep 2
+    start_watcher "$name"
+    break
+  done
+done
