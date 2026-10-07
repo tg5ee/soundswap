@@ -2,7 +2,7 @@
 # Debug logging was enabled on the source PC; keep it off for normal use.
 # Omarchy Sounds settings. Change with `omarchy-sounds` or the bar panel, or edit by hand.
 ENABLED=1
-VOLUME=0.6
+VOLUME=0.55
 
 # Play battery-critical at or below this percentage (on battery only)
 CRITICAL_BATTERY_LEVEL=5
@@ -31,8 +31,8 @@ DEVICE_CONNECT=1
 DEVICE_DISCONNECT=1
 CHARGER_CONNECT=1
 CHARGER_DISCONNECT=1
-BATTERY_LOW=0
-BATTERY_CRITICAL=0
+BATTERY_LOW=1
+BATTERY_CRITICAL=1
 THEME_CHANGE=1
 UPDATE_COMPLETE=1
 

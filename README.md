@@ -85,14 +85,15 @@ omarchy-sounds log [on|off]     # watch triggers live, for troubleshooting
 
 Changes take effect immediately; no Hyprland reload needed.
 
-`config.example` records the working installation's preferences: click, critical
-notification, and both battery cues are disabled; master volume is 0.6. Debug
-logging is off in the example. The installer preserves existing settings and
-uses `config.default` for a new installation. Apply individual preferences with
-the CLI or panel; the example is not installed automatically.
+`config.example` records the working installation's preferences: click and
+critical notifications are disabled; master volume is 0.55. Low and critical
+battery sounds are enabled. Debug logging is off in the example. The installer
+preserves existing settings and uses `config.default` for a new installation.
+Apply individual preferences with the CLI or panel; the example is not
+installed automatically.
 
-The repository includes the 25 event clips used by the working installation.
-The two battery events have no clips and remain silent. See
+The repository includes clips for all 27 events used by the working
+installation. See
 [`sounds/SOURCES.md`](sounds/SOURCES.md) for provenance and intentional reuse.
 
 ## How it works

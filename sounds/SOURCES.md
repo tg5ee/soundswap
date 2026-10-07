@@ -38,13 +38,12 @@ was absent; existing event sounds and settings were preserved.
 | `screenshot.wav` | `ESM_Game_Notification_83_Coin_Blip_Select_Tap_Button.wav` | First 0.65 s, fade from 0.50 s, -5 dB |
 | `menu-close.wav` | Existing installed `window-close.wav` | Exact copy of the short existing close cue |
 
-`battery-low` and `battery-critical` remain without files: none of the downloaded
-clips clearly conveys a warning. The wooden door and long water notification
-clips were also left unused because the existing short event sounds fit better.
+The wooden door and long water notification clips were left unused because the
+existing short event sounds fit better.
 
 ## Working installation synchronization (2026-10-06)
 
-All 25 canonical event WAVs match the working installation byte for byte. Seven
+All 27 canonical event WAVs match the working installation byte for byte. Seven
 previously absent files were recovered from the installed sound directory:
 `attention`, `auth-prompt`, `charger-connect`, `charger-disconnect`,
 `update-complete`, `window-close`, and `window-open`. The installed
@@ -62,3 +61,16 @@ the misspelled `notification-critrical.wav` are not published. Originals remain
 local. All 11 downloaded clips were compared; the three unused clips were not
 imported, and the other eight were already represented directly or through the
 documented edits above.
+
+## Battery alerts (2026-10-06)
+
+The user selected two additional WAVs from `~/Downloads` without reprocessing:
+
+| Event file | Original | Format | Duration | SHA256 |
+|---|---|---|---:|---|
+| `battery-low.wav` | `JJP_R90SRNB_percussion_one_shot_must_have.wav` | 44.1 kHz, 16-bit stereo PCM | 0.643 s | `75eaed0134e58cbfe60f82d1eb166dc0811d7195004a47c4d9f5be9e13b4bbaf` |
+| `battery-critical.wav` | `PoliceSirenYelp_BW.4559.wav` | 96 kHz, 24-bit stereo PCM | 0.608 s | `6aa9331ae51d86dd6a96b5826ef391daaabc8cea479eca67767aad9b94c109f7` |
+
+Both source files remain in Downloads. Their event copies are byte-identical
+and decode successfully. Both battery event switches are enabled in the live
+settings and in `config.example`.
