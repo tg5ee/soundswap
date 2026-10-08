@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# omarchy-sounds — control Omarchy Sounds.
+# beepboop — control BeepBoop sounds.
 
 # Prefer the checkout helper when running from source.
 base="$(dirname "$(readlink -f "$0")")"
 common="$base/../share/common.sh"
-[[ -f $common ]] || common="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-sounds/common.sh"
+[[ -f $common ]] || common="${XDG_DATA_HOME:-$HOME/.local/share}/beepboop/common.sh"
 # shellcheck source=share/common.sh
 source "$common" || exit 1
-player="$base/omarchy-sounds-play"
+player="$base/beepboop-play"
 
 usage() {
   cat <<USAGE
-Usage: omarchy-sounds <command>
+Usage: beepboop <command>
 
   status               Show settings and which sound files are present
   events               List every event and what triggers it
@@ -22,7 +22,7 @@ Usage: omarchy-sounds <command>
   event-volume EVENT N Set event gain (0.0-1.0), multiplied by master volume
   test [EVENT]         Play one event, or all of them in turn
   preview EVENT        Play one event even if it's switched off
-  poweroff             Play shutdown before Omarchy starts poweroff
+  poweroff             Play shutdown before the system starts poweroff
   dir                  Print the sounds folder
   log [on|off]         Record every trigger; with no argument, watch the log
   json                 Print settings as JSON (used by the bar panel)
@@ -75,23 +75,23 @@ case "${1:-}" in
     for candidate in pw-play paplay mpv; do
       if command -v "$candidate" >/dev/null; then backend=$candidate; break; fi
     done
-    logger -t omarchy-sounds "shutdown early-start file=${file:-none} backend=$backend" || true
+    logger -t beepboop "shutdown early-start file=${file:-none} backend=$backend" || true
     bash "$player" --wait shutdown &
     playback_pid=$!
-    logger -t omarchy-sounds "shutdown playback-pid=$playback_pid" || true
+    logger -t beepboop "shutdown playback-pid=$playback_pid" || true
     if wait "$playback_pid"; then
       : > "$state/shutdown.preplayed"
-      logger -t omarchy-sounds 'shutdown early-complete status=0' || true
+      logger -t beepboop 'shutdown early-complete status=0' || true
     else
       playback_status=$?
-      logger -t omarchy-sounds "shutdown early-failed status=$playback_status" || true
+      logger -t beepboop "shutdown early-failed status=$playback_status" || true
     fi
     if omarchy-system-shutdown; then
       exit 0
     else
       shutdown_status=$?
       rm -f -- "$state/shutdown.preplayed"
-      logger -t omarchy-sounds "shutdown request-failed status=$shutdown_status" || true
+      logger -t beepboop "shutdown request-failed status=$shutdown_status" || true
       exit "$shutdown_status"
     fi ;;
   shutdown-stop)
@@ -112,7 +112,7 @@ case "${1:-}" in
     case "$2" in
       on)  setvar LOG 1 || exit 1; echo "Logging triggers to $log" ;;
       off) setvar LOG 0 || exit 1; echo "Logging off" ;;
-      '')  read_config; [ "${LOG:-0}" = 1 ] || echo "Logging is off; turn it on with: omarchy-sounds log on"
+      '')  read_config; [ "${LOG:-0}" = 1 ] || echo "Logging is off; turn it on with: beepboop log on"
            mkdir -p "${log%/*}"; touch "$log"; exec tail -f "$log" ;;
       *)   echo "Unknown log option: $2" >&2; exit 2 ;;
     esac ;;

@@ -11,7 +11,7 @@ hl = {
   end,
 }
 o = {bind = function(_, _, _, flags) assert(flags.release and flags.non_consuming) end}
-dofile('hypr/omarchy_sounds.lua')
+dofile('hypr/beepboop.lua')
 callbacks['workspace.active']({id=1})
 assert(#played == 0)
 callbacks['workspace.active']({id=2})

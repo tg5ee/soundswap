@@ -16,7 +16,7 @@ class CoreTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
-        self.conf = self.home / '.config/omarchy-sounds'
+        self.conf = self.home / '.config/beepboop'
         (self.conf / 'sounds').mkdir(parents=True)
         self.cfg = self.conf / 'config'
         self.cfg.write_text((ROOT / 'config.default').read_text())
@@ -39,7 +39,7 @@ class CoreTests(unittest.TestCase):
                               text=True, capture_output=True, timeout=15)
 
     def cli(self, *args):
-        return self.run_cmd('omarchy-sounds', *args)
+        return self.run_cmd('beepboop', *args)
 
     def test_poweroff_plays_before_stock_command_and_skips_stop_duplicate(self):
         (self.conf / 'sounds/shutdown.wav').touch()
@@ -89,7 +89,7 @@ class CoreTests(unittest.TestCase):
         logger.write_text('#!/bin/bash\nexit 0\n')
         logger.chmod(0o755)
 
-        first = subprocess.Popen(['bash', str(ROOT / 'bin/omarchy-sounds-play'), '--wait', 'shutdown'],
+        first = subprocess.Popen(['bash', str(ROOT / 'bin/beepboop-play'), '--wait', 'shutdown'],
                                  env=self.env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.addCleanup(lambda: first.poll() is None and first.kill())
         for _ in range(100):
@@ -143,15 +143,15 @@ class CoreTests(unittest.TestCase):
     def test_volume_and_event_validation(self):
         (self.conf / 'sounds/click.wav').touch()
         self.cfg.write_text('VOLUME=9\n')
-        r = self.run_cmd('omarchy-sounds-play', '--wait', 'click')
+        r = self.run_cmd('beepboop-play', '--wait', 'click')
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn('0.6', (self.home / 'played').read_text().splitlines())
-        self.assertNotEqual(self.run_cmd('omarchy-sounds-play', '--wait', '../escape').returncode, 0)
+        self.assertNotEqual(self.run_cmd('beepboop-play', '--wait', '../escape').returncode, 0)
 
     def test_per_event_gain_multiplies_master_and_is_validated(self):
         (self.conf / 'sounds/click.wav').touch()
         self.cfg.write_text('VOLUME=0.6\nCLICK_VOLUME=0.5\n')
-        self.assertEqual(self.run_cmd('omarchy-sounds-play', '--wait', 'click').returncode, 0)
+        self.assertEqual(self.run_cmd('beepboop-play', '--wait', 'click').returncode, 0)
         self.assertIn('0.3', (self.home / 'played').read_text().splitlines())
         self.assertEqual(self.cli('event-volume', 'click', '0.25').returncode, 0)
         state = json.loads(self.cli('json').stdout)
@@ -161,24 +161,24 @@ class CoreTests(unittest.TestCase):
     def test_json_escapes_control_characters_in_paths(self):
         self.env['XDG_CONFIG_HOME'] = str(self.home / 'quote"and\nnewline\ttab')
         state = json.loads(self.cli('json').stdout)
-        self.assertEqual(state['dir'], self.env['XDG_CONFIG_HOME'] + '/omarchy-sounds/sounds')
+        self.assertEqual(state['dir'], self.env['XDG_CONFIG_HOME'] + '/beepboop/sounds')
 
     def test_disabled_and_missing_events_stay_silent(self):
         (self.conf / 'sounds/click.wav').touch()
         self.cfg.write_text('CLICK=0\n')
-        self.assertEqual(self.run_cmd('omarchy-sounds-play', '--wait', 'click').returncode, 0)
-        self.assertEqual(self.run_cmd('omarchy-sounds-play', '--wait', 'workspace').returncode, 0)
+        self.assertEqual(self.run_cmd('beepboop-play', '--wait', 'click').returncode, 0)
+        self.assertEqual(self.run_cmd('beepboop-play', '--wait', 'workspace').returncode, 0)
         self.assertFalse((self.home / 'played').exists())
-        self.assertEqual(self.run_cmd('omarchy-sounds-play', '--wait', '--force', 'click').returncode, 0)
+        self.assertEqual(self.run_cmd('beepboop-play', '--wait', '--force', 'click').returncode, 0)
         self.assertTrue((self.home / 'played').exists())
 
     def test_playback_failure_is_logged(self):
         (self.conf / 'sounds/click.wav').touch()
         self.cfg.write_text('LOG=1\n')
         self.backend('echo decoder-error >&2; exit 7')
-        r = self.run_cmd('omarchy-sounds-play', '--wait', 'click')
+        r = self.run_cmd('beepboop-play', '--wait', 'click')
         self.assertNotEqual(r.returncode, 0)
-        log = (self.runtime / 'omarchy-sounds/events.log').read_text()
+        log = (self.runtime / 'beepboop/events.log').read_text()
         self.assertIn('click', log)
         self.assertIn('failed', log)
         self.assertIn('7', log)
@@ -188,7 +188,7 @@ class CoreTests(unittest.TestCase):
             (self.conf / f'sounds/{event}.wav').touch()
         self.backend('printf "%s\\n" "${@: -1}" >> "$HOME/played"; sleep 0.5')
         with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
-            list(pool.map(lambda e: self.run_cmd('omarchy-sounds-play', '--wait', e),
+            list(pool.map(lambda e: self.run_cmd('beepboop-play', '--wait', e),
                           ['click'] * 10 + ['notification-critical']))
         played = (self.home / 'played').read_text().splitlines()
         self.assertEqual(sum(p.endswith('/click.wav') for p in played), 1)
@@ -198,7 +198,7 @@ class CoreTests(unittest.TestCase):
         unknown = self.cli('enabel', 'click')
         self.assertNotEqual(unknown.returncode, 0)
         bad_log = subprocess.run(
-            ['timeout', '1', 'bash', str(ROOT / 'bin/omarchy-sounds'), 'log', 'banana'],
+            ['timeout', '1', 'bash', str(ROOT / 'bin/beepboop'), 'log', 'banana'],
             env=self.env, text=True, capture_output=True, timeout=3)
         self.assertEqual(bad_log.returncode, 2, bad_log.stderr)
 
@@ -214,14 +214,14 @@ class CoreTests(unittest.TestCase):
         (self.conf / 'sounds/click.wav').touch()
         self.backend('printf "played\\n" >> "$HOME/played"; sleep 0.4')
         first = subprocess.Popen(
-            ['bash', str(ROOT / 'bin/omarchy-sounds-play'), '--wait', 'click'],
+            ['bash', str(ROOT / 'bin/beepboop-play'), '--wait', 'click'],
             env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
             deadline = time.monotonic() + 2
             while not (self.home / 'played').exists() and time.monotonic() < deadline:
                 time.sleep(0.01)
             self.assertTrue((self.home / 'played').exists())
-            preview = self.run_cmd('omarchy-sounds-play', '--wait', '--force', 'click')
+            preview = self.run_cmd('beepboop-play', '--wait', '--force', 'click')
             self.assertEqual(preview.returncode, 0, preview.stderr)
             self.assertEqual((self.home / 'played').read_text().splitlines(), ['played', 'played'])
         finally:
@@ -231,7 +231,7 @@ class CoreTests(unittest.TestCase):
         (self.conf / 'sounds/click.wav').touch()
         self.backend('printf "played\\n" >> "$HOME/played"; sleep 0.4')
         first = subprocess.Popen(
-            ['bash', str(ROOT / 'bin/omarchy-sounds-play'), '--wait', 'click'],
+            ['bash', str(ROOT / 'bin/beepboop-play'), '--wait', 'click'],
             env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
             deadline = time.monotonic() + 2
@@ -239,7 +239,7 @@ class CoreTests(unittest.TestCase):
                 time.sleep(0.01)
             self.assertTrue((self.home / 'played').exists())
             time.sleep(0.15)
-            second = self.run_cmd('omarchy-sounds-play', '--wait', 'click')
+            second = self.run_cmd('beepboop-play', '--wait', 'click')
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertEqual((self.home / 'played').read_text().splitlines(), ['played', 'played'])
         finally:

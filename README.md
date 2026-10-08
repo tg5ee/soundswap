@@ -1,6 +1,6 @@
-# Omarchy Sounds
+# BeepBoop
 
-System sounds for Omarchy, covering the Windows sound scheme events that make
+System sounds for your desktop, covering the Windows sound scheme events that make
 sense on a Hyprland desktop plus a few Omarchy-specific ones: 27 events in all.
 
 ```bash
@@ -10,7 +10,7 @@ sense on a Hyprland desktop plus a few Omarchy-specific ones: 27 events in all.
 
 ## Adding sounds
 
-Put files in `~/.config/omarchy-sounds/sounds/` named after the event
+Put files in `~/.config/beepboop/sounds/` named after the event
 (`.wav .ogg .oga .flac .mp3`). Missing files are simply silent.
 
 | File name | Event | Plays when |
@@ -47,14 +47,14 @@ Put files in `~/.config/omarchy-sounds/sounds/` named after the event
 | `battery-critical` | Critical battery | Battery at or below 5% |
 | **Omarchy** | | |
 | `theme-change` | Theme changed | You switch Omarchy theme |
-| `update-complete` | System packages updated | Packages and migrations finish; other update stages may follow |
+| `update-complete` | System Update | Packages and migrations finish; other update stages may follow |
 
 Files placed in this repo's `sounds/` folder get copied in on install
 (your existing files are never overwritten).
 
 ## Bar widget
 
-The installer adds a **Sounds** widget (󰝚) to the right side of the bar, built
+The installer adds a **BeepBoop** widget (󰝚) to the right side of the bar, built
 with the same panel kit as Omarchy's Audio and Bluetooth panels.
 
 - **Left click**: open the panel. It has a master on/off switch, a volume slider,
@@ -66,21 +66,21 @@ with the same panel kit as Omarchy's Audio and Bluetooth panels.
 Keyboard, with the panel open: arrows move, Enter toggles, ←/→ change volume,
 `p` previews the selected sound, `s` turns everything on/off, `o` opens the folder.
 
-Move it with `omarchy bar move tomg.sounds --section left|center|right`.
-From scripts: `omarchy-shell tomg.sounds toggleSounds`.
+Move it with `omarchy bar move beepboop.sounds --section left|center|right`.
+From scripts: `omarchy-shell beepboop.sounds toggleSounds`.
 
 ## Controlling it from the terminal
 
 ```bash
-omarchy-sounds status           # what's on, which files are present
-omarchy-sounds off | on | toggle
-omarchy-sounds disable click    # turn off one event
-omarchy-sounds volume 0.4
-omarchy-sounds event-volume click 0.5  # gain multiplied by master volume
-omarchy-sounds test [event]
-omarchy-sounds preview <event>  # plays even if that event is switched off
-omarchy-sounds events           # list every event and its trigger
-omarchy-sounds log [on|off]     # watch triggers live, for troubleshooting
+beepboop status           # what's on, which files are present
+beepboop off | on | toggle
+beepboop disable click    # turn off one event
+beepboop volume 0.4
+beepboop event-volume click 0.5  # gain multiplied by master volume
+beepboop test [event]
+beepboop preview <event>  # plays even if that event is switched off
+beepboop events           # list every event and its trigger
+beepboop log [on|off]     # watch triggers live, for troubleshooting
 ```
 
 Changes take effect immediately; no Hyprland reload needed.
@@ -100,23 +100,23 @@ installation. See
 
 | Source | Events |
 |---|---|
-| Hyprland Lua events (`hypr/omarchy_sounds.lua`) | startup, window open/close, fullscreen/restore, workspace, attention, menu open/close (`omarchy-menu` layer), password prompt (`omarchy-polkit` layer) |
+| Hyprland Lua events (`hypr/beepboop.lua`) | startup, window open/close, fullscreen/restore, workspace, attention, menu open/close (`omarchy-menu` layer), password prompt (`omarchy-polkit` layer) |
 | Non-consuming Hyprland binds (the key still does its job) | mouse clicks, volume keys, Super tap (release bind that only fires on a lone tap) |
-| `omarchy-sounds-daemon` (`omarchy-sounds.service`) | lock/unlock (omarchy-shell's lock log in the user journal), notifications and screenshots (session D-Bus; normal ones respect Do Not Disturb), USB (udev) and Bluetooth (BlueZ) devices, charger and critical battery (UPower) |
-| Omarchy hooks (`~/.config/omarchy/hooks/*.d/omarchy-sounds`) | battery-low, theme-set, post-update |
+| `beepboop-daemon` (`beepboop.service`) | lock/unlock (omarchy-shell's lock log in the user journal), notifications and screenshots (session D-Bus; normal ones respect Do Not Disturb), USB (udev) and Bluetooth (BlueZ) devices, charger and critical battery (UPower) |
+| Omarchy hooks (`~/.config/omarchy/hooks/*.d/beepboop`) | battery-low, theme-set, post-update |
 | Omarchy Shutdown menu action | Plays `shutdown` to completion before Omarchy starts poweroff. |
-| `omarchy-sounds-shutdown.service` | Fallback `ExecStop` playback for other shutdown paths, reboot, and logout. Skips a duplicate after the menu action. |
+| `beepboop-shutdown.service` | Fallback `ExecStop` playback for other shutdown paths, reboot, and logout. Skips a duplicate after the menu action. |
 
 Device sounds are skipped for 8 seconds after resuming from suspend and never
 repeat within a second, so reconnect bursts don't machine-gun. Everything calls
-`omarchy-sounds-play <event>`, which reads `~/.config/omarchy-sounds/config`.
+`beepboop-play <event>`, which reads `~/.config/beepboop/config`.
 
 The event list lives in `share/events.tsv`; the CLI and the bar panel both read
 it, so adding an event there (plus whatever fires it) is all it takes.
 
 ### Troubleshooting
 
-`omarchy-sounds log on`, then `omarchy-sounds log` shows every trigger as it
+`beepboop log on`, then `beepboop log` shows every trigger as it
 happens, whether or not a sound file exists for it.
 
 ### Development checks
@@ -128,7 +128,7 @@ audio commands, so they do not shut down or alter the active desktop:
 python3 -m unittest discover -s tests -v
 node tests/test_panel.js
 lua tests/test_hypr.lua
-luac -p hypr/omarchy_sounds.lua
+luac -p hypr/beepboop.lua
 shellcheck bin/* share/common.sh install.sh uninstall.sh hooks/*
 git diff --check
 ```

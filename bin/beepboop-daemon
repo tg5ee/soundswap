@@ -3,12 +3,12 @@
 # this service cannot signal another process in the caller's group.
 base="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 common="$base/../share/common.sh"
-[[ -f $common ]] || common="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-sounds/common.sh"
+[[ -f $common ]] || common="${XDG_DATA_HOME:-$HOME/.local/share}/beepboop/common.sh"
 # shellcheck source=share/common.sh
 source "$common" || exit 1
 runtime_dir || { echo 'Cannot create private sound runtime directory' >&2; exit 1; }
-player="$base/omarchy-sounds-play"
-[[ -x $player ]] || player="$HOME/.local/bin/omarchy-sounds-play"
+player="$base/beepboop-play"
+[[ -x $player ]] || player="$HOME/.local/bin/beepboop-play"
 play() { "$player" "$1"; }
 
 quiet() {
@@ -146,9 +146,9 @@ if [[ ${1:-} == --watch ]]; then
   "watch_$name"
   exit 1  # An event stream ending is always a failure and should be retried.
 fi
-[[ $# == 0 ]] || { echo 'Usage: omarchy-sounds-daemon' >&2; exit 2; }
+[[ $# == 0 ]] || { echo 'Usage: beepboop-daemon' >&2; exit 2; }
 exec 9>"$state/daemon.lock" || exit 1
-flock -n 9 || { echo 'Omarchy Sounds watcher is already running' >&2; exit 1; }
+flock -n 9 || { echo 'BeepBoop watcher is already running' >&2; exit 1; }
 
 declare -A pids=() warned=()
 start_watcher() {

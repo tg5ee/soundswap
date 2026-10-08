@@ -43,9 +43,10 @@ class DaemonTests(unittest.TestCase):
         (self.checkout / 'bin').mkdir(parents=True)
         shutil.copytree(ROOT / 'share', self.checkout / 'share')
         shutil.copy(ROOT / 'config.default', self.checkout / 'config.default')
-        self.daemon = self.checkout / 'bin/omarchy-sounds-daemon'
-        shutil.copy(ROOT / 'bin/omarchy-sounds-daemon', self.daemon)
-        self.cfg = self.home / '.config/omarchy-sounds/config'
+        self.daemon = self.checkout / 'bin/beepboop-daemon'
+        shutil.copy(ROOT / 'bin/beepboop-daemon', self.daemon)
+        self.daemon.chmod(0o755)
+        self.cfg = self.home / '.config/beepboop/config'
         self.cfg.parent.mkdir(parents=True)
         self.cfg.write_text('')
         self.runtime = self.home / 'run'
@@ -59,7 +60,7 @@ class DaemonTests(unittest.TestCase):
         for cmd in ('journalctl', 'udevadm', 'dbus-monitor', 'gdbus'):
             self.fake(cmd, 'cat "$HOME/input"')
         # Absolute sibling player fixture catches PATH-based playback regressions.
-        (self.checkout / 'bin/omarchy-sounds-play').write_text(
+        (self.checkout / 'bin/beepboop-play').write_text(
             '#!/bin/bash\nprintf "%s\\n" "$1" >> "$HOME/played"\n')
         self.processes = []
         self.addCleanup(self.stop_all)
@@ -164,7 +165,7 @@ class DaemonTests(unittest.TestCase):
 
     def test_suspend_and_resume_update_valid_atomic_quiet_deadline(self):
         self.watcher('sleep', '/org/freedesktop/login1: org.freedesktop.login1.Manager.PrepareForSleep (true,)\n', ':')
-        quiet = self.runtime / 'omarchy-sounds/quiet-until'
+        quiet = self.runtime / 'beepboop/quiet-until'
         self.assertGreater(int(quiet.read_text()), time.time() + 8)
         self.watcher('sleep', '/org/freedesktop/login1: org.freedesktop.login1.Manager.PrepareForSleep (false,)\n', ':')
         self.assertAlmostEqual(int(quiet.read_text()), time.time() + 8, delta=1.5)

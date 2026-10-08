@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "id": "tomg.sounds",
-  "name": "Sounds",
+  "id": "beepboop.sounds",
+  "name": "BeepBoop",
   "version": "1.0.0",
-  "author": "tomg",
+  "author": "beepboop",
   "license": "MIT",
-  "description": "System sounds for Omarchy: startup, shutdown, mouse clicks, window open, window close, and tapping Super. Turn them on and off, set the volume, and preview each sound from the bar.",
+  "description": "BeepBoop system sounds for your desktop: startup, shutdown, mouse clicks, window open, window close, and tapping Super. Turn them on and off, set the volume, and preview each sound from the bar.",
   "kinds": ["bar-widget"],
   "entryPoints": {
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Sounds",
-    "description": "Turn system sounds on and off, set their volume, and preview each one.",
+    "displayName": "BeepBoop",
+    "description": "Turn BeepBoop system sounds on and off, set their volume, and preview each one.",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right"

@@ -1,11 +1,11 @@
 [Unit]
-Description=Omarchy Sounds event watcher (lock, notifications, devices, power)
+Description=BeepBoop event watcher (lock, notifications, devices, power)
 PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
 Environment="PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=%h/.local/bin/omarchy-sounds-daemon
+ExecStart=%h/.local/bin/beepboop-daemon
 Restart=on-failure
 RestartSec=3
 

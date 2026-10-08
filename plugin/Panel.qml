@@ -6,26 +6,26 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// Omarchy Sounds on the bar.
+// BeepBoop on the bar.
 //
 //   left click    open the panel
 //   right click   turn every sound on/off
 //   middle click  open the sounds folder
 //
-// The panel is a thin front end over the `omarchy-sounds` CLI: it reads state
-// with `omarchy-sounds json` and changes it with the same commands you'd type,
-// so the bar, the CLI and ~/.config/omarchy-sounds/config never disagree. The
+// The panel is a thin front end over the `beepboop` CLI: it reads state
+// with `beepboop json` and changes it with the same commands you'd type,
+// so the bar, the CLI and ~/.config/beepboop/config never disagree. The
 // event list itself (names, groups, icons) comes from events.tsv via that JSON,
 // so new events show up here without touching this file.
 Panel {
   id: root
-  moduleName: "tomg.sounds"
-  ipcTarget: "tomg.sounds"
+  moduleName: "beepboop.sounds"
+  ipcTarget: "beepboop.sounds"
   // manageIpc: false so this panel can own the single IpcHandler the target
   // permits — needed for the toggleSounds method below.
   manageIpc: false
 
-  readonly property string configDir: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/omarchy-sounds"
+  readonly property string configDir: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/beepboop"
 
   readonly property color fg: bar ? bar.foreground : Color.foreground
   readonly property color dim: Qt.darker(fg, 1.4)
@@ -59,8 +59,8 @@ Panel {
   readonly property string heroStatusText: {
     if (!installed) return "Not set up"
     if (!soundsOn) return "Muted"
-    if (loadedCount === 0) return "No sounds added yet"
-    return loadedCount + " of " + events.length + " sounds added"
+    if (loadedCount === 0) return "No clips added yet"
+    return loadedCount + " of " + events.length + " added"
   }
   readonly property string toggleHint: soundsOn ? "Turn sounds off" : "Turn sounds on"
 
@@ -160,7 +160,7 @@ Panel {
 
   function pumpWrites() {
     if (writeBusy || writeQueue.length === 0) return
-    writeProc.command = ["omarchy-sounds"].concat(writeQueue[0])
+    writeProc.command = ["beepboop"].concat(writeQueue[0])
     writeQueue = writeQueue.slice(1)
     writeBusy = true
     writeProc.running = true
@@ -221,7 +221,7 @@ Panel {
 
   function preview(id) {
     var ev = findEvent(id)
-    if (ev && ev.file) Util.execArgv(["omarchy-sounds-play", "--force", id])
+    if (ev && ev.file) Util.execArgv(["beepboop-play", "--force", id])
   }
 
   // Volume changes preview the click sound (short, and what you'll hear most),
@@ -277,7 +277,7 @@ Panel {
   }
 
   IpcHandler {
-    target: "tomg.sounds"
+    target: "beepboop.sounds"
 
     function open() { root.open() }
     function close() { root.close() }
@@ -312,7 +312,7 @@ Panel {
 
   Process {
     id: statusProc
-    command: ["omarchy-sounds", "json"]
+    command: ["beepboop", "json"]
     stdout: StdioCollector { id: statusOutput; waitForEnd: true }
     stderr: StdioCollector { id: statusErrors; waitForEnd: true }
     onExited: function(code, status) { root.finishStatus(code, status) }
@@ -353,7 +353,16 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: String.fromCodePoint(root.soundsOn ? 0xF075A : 0xF075B)
+    opticalSize: 20
+    iconComponent: Component {
+      Image {
+        anchors.fill: parent
+        source: Qt.resolvedUrl("beepboop.svg")
+        sourceSize.width: 48
+        sourceSize.height: 48
+        fillMode: Image.PreserveAspectFit
+      }
+    }
     dimmed: !root.installed
     tooltipText: ""
     onPressed: function(b) {
@@ -370,8 +379,8 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(420))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(640))
+    contentWidth: panel.fittedContentWidth(Style.space(260))
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(560))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -404,26 +413,13 @@ Panel {
         Column {
           id: column
           width: panelFlick.width - (panelFlick.interactive ? Style.space(10) : 0)
-          spacing: Style.space(14)
+          spacing: Style.space(6)
 
-          // ---------- Hero: note icon · title/status · master switch ----------
+          // ---------- Hero: status + master switch ----------
           Item {
             id: hero
             width: parent.width
-            implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight, powerSwitch.implicitHeight)
-
-            // Status only — the switch owns toggling, mouse and keyboard alike.
-            Text {
-              id: heroIcon
-              textFormat: Text.PlainText
-              text: String.fromCodePoint(root.soundsOn ? 0xF075A : 0xF075B)
-              color: root.fg
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.display
-              opacity: root.soundsOn && root.installed ? 1.0 : 0.5
-              anchors.left: parent.left
-              anchors.verticalCenter: parent.verticalCenter
-            }
+            implicitHeight: Math.max(heroLabels.implicitHeight, powerSwitch.implicitHeight)
 
             // Compact on/off switch on the trailing edge of the hero, and the
             // header's only cursor target.
@@ -434,6 +430,8 @@ Panel {
               hasCursor: root.headerHasCursor
               onHasCursorChanged: if (hasCursor) root.ensureVisible(hero)
               foreground: root.fg
+              trackHeight: 18
+              cursorPad: Style.space(3)
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               onHovered: function(on) { if (on) { root.cursorActive = true; root.cursorIndex = 0 } }
@@ -448,22 +446,11 @@ Panel {
 
             Column {
               id: heroLabels
-              anchors.left: heroIcon.right
-              anchors.leftMargin: Style.space(14)
+              anchors.left: parent.left
               anchors.right: parent.right
-              anchors.rightMargin: powerSwitch.visible ? powerSwitch.width + Style.space(12) : 0
+              anchors.rightMargin: powerSwitch.visible ? powerSwitch.width + Style.space(8) : 0
               anchors.verticalCenter: parent.verticalCenter
-              spacing: Style.space(2)
-
-              Text {
-                text: "Sounds"
-                color: root.fg
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.title
-                font.bold: true
-                elide: Text.ElideRight
-                width: parent.width
-              }
+              spacing: Style.space(1)
 
               Text {
                 textFormat: Text.PlainText
@@ -472,7 +459,7 @@ Panel {
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.bold: true
-                font.letterSpacing: 1.2
+                font.letterSpacing: 0.5
                 elide: Text.ElideRight
                 width: parent.width
               }
@@ -483,7 +470,7 @@ Panel {
             visible: !root.installed
             width: parent.width
             textFormat: Text.PlainText
-            text: "Run install.sh from the omarchy-sounds folder to set up the sound hooks."
+            text: "Run install.sh from the BeepBoop folder to set up the sound hooks."
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -510,7 +497,7 @@ Panel {
           Column {
             visible: root.installed
             width: parent.width
-            spacing: Style.space(10)
+            spacing: Style.space(3)
 
             Item {
               width: parent.width
@@ -542,7 +529,7 @@ Panel {
             CursorSurface {
               id: volumeRow
               width: parent.width
-              height: volumeSlider.implicitHeight + Style.spacing.controlGap
+              height: volumeSlider.implicitHeight
               hasCursor: root.cursorActive && root.cursorIndex === root.volumeIndex
               onHasCursorChanged: if (hasCursor) root.ensureVisible(volumeRow)
               foreground: root.fg
@@ -576,20 +563,18 @@ Panel {
               id: section
               required property var modelData
               width: column.width
-              spacing: Style.space(4)
+              spacing: 0
 
               PanelSeparator {
                 width: parent.width
                 foreground: root.fg
               }
 
-              Item { width: 1; height: Style.space(10) }
-
               PanelSectionHeader {
                 text: section.modelData.name.toUpperCase()
                 foreground: root.fg
                 fontFamily: root.fontFamily
-                bottomPadding: Style.space(6)
+                bottomPadding: 0
               }
 
               Repeater {
@@ -613,17 +598,17 @@ Panel {
           Column {
             visible: root.installed
             width: parent.width
-            spacing: Style.space(8)
+            spacing: Style.space(3)
 
             Button {
               id: folderButton
-              width: parent.width
+              width: implicitWidth
               iconText: String.fromCodePoint(0xF1359)
               text: "Open sounds folder"
               foreground: root.fg
               fontFamily: root.fontFamily
               fontSize: Style.font.bodySmall
-              bordered: true
+              bordered: false
               hasCursor: root.cursorActive && root.cursorIndex === root.folderIndex
               onHasCursorChanged: if (hasCursor) root.ensureVisible(folderButton)
               onClicked: root.openFolder()
@@ -633,12 +618,12 @@ Panel {
             Text {
               width: parent.width
               textFormat: Text.PlainText
-              text: "Name each file after its event, as shown in each empty row (e.g. window-open.wav). .wav .ogg .flac and .mp3 all work."
+              text: "Use event names for files. WAV, OGG, FLAC and MP3 work."
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
               wrapMode: Text.WordWrap
-              horizontalAlignment: Text.AlignHCenter
+              horizontalAlignment: Text.AlignLeft
             }
           }
         }
@@ -646,8 +631,52 @@ Panel {
     }
   }
 
-  // One event: icon · name + file · preview button · switch. Clicking the row
-  // flips the switch; the play button previews the sound even when it's off.
+  component EventToggle: Item {
+    id: toggle
+    property bool checked: false
+    property string tooltipText: ""
+    signal toggled()
+
+    width: 36
+    height: 18
+
+    Rectangle {
+      id: track
+      anchors.fill: parent
+      radius: 4
+      color: toggle.checked
+        ? Style.selectedFillFor(root.fg, Color.accent)
+        : Style.normalFillFor(root.fg, Color.accent)
+
+      Rectangle {
+        width: 14
+        height: 14
+        radius: 3
+        x: toggle.checked ? track.width - width - 2 : 2
+        y: 2
+        color: root.fg
+        Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+      }
+
+      Behavior on color { ColorAnimation { duration: 150 } }
+    }
+
+    MouseArea {
+      id: toggleMouse
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: toggle.toggled()
+    }
+
+    PanelToolTip {
+      visible: toggleMouse.containsMouse && toggle.tooltipText !== ""
+      text: toggle.tooltipText
+      fontFamily: root.fontFamily
+    }
+  }
+
+  // One event: name + file, preview, and a compact on/off action.
   component EventRow: CursorSurface {
     id: row
     property var ev: ({})
@@ -658,14 +687,14 @@ Panel {
     hasCursor: root.cursorActive && root.cursorIndex === slot
     onHasCursorChanged: if (hasCursor) root.ensureVisible(row)
     foreground: root.fg
-    implicitHeight: rowContent.implicitHeight + Style.spacing.rowPaddingX
+    implicitHeight: Math.max(Style.space(32), rowContent.implicitHeight + Style.space(4))
     opacity: root.soundsOn ? 1.0 : 0.5
 
     MouseArea {
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      onContainsMouseChanged: if (containsMouse) { root.cursorActive = true; root.cursorIndex = row.slot }
+      onContainsMouseChanged: if (containsMouse) root.cursorActive = false
       onClicked: root.toggleEvent(row.ev.id)
     }
 
@@ -674,46 +703,34 @@ Panel {
       anchors.left: parent.left
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
-      anchors.leftMargin: Style.space(10)
-      anchors.rightMargin: Style.space(10)
-      implicitHeight: Math.max(eventIcon.implicitHeight, info.implicitHeight, rowSwitch.implicitHeight)
-
-      Text {
-        id: eventIcon
-        textFormat: Text.PlainText
-        text: String.fromCodePoint(row.ev.icon || 0xF075A)
-        color: row.ev.enabled ? root.fg : root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.heading
-        width: Style.space(22)
-        horizontalAlignment: Text.AlignHCenter
-        anchors.left: parent.left
-        anchors.verticalCenter: parent.verticalCenter
-      }
+      anchors.leftMargin: Style.space(6)
+      anchors.rightMargin: Style.space(6)
+      implicitHeight: Math.max(info.implicitHeight, playButton.implicitHeight, toggleButton.implicitHeight)
 
       Column {
         id: info
-        spacing: Style.space(1)
-        anchors.left: eventIcon.right
-        anchors.leftMargin: Style.space(10)
-        anchors.right: playButton.left
-        anchors.rightMargin: Style.space(8)
+        spacing: 0
+        anchors.left: parent.left
+        width: Math.min(Math.max(row.hasFile ? 0 : Style.space(90), eventLabel.implicitWidth + Style.space(4)),
+                        rowContent.width - playButton.width - toggleButton.width - Style.space(12))
         anchors.verticalCenter: parent.verticalCenter
 
         Text {
+          id: eventLabel
           textFormat: Text.PlainText
           text: row.ev.label || ""
           color: row.ev.enabled ? root.fg : root.dim
           font.family: root.fontFamily
-          font.pixelSize: Style.font.body
+          font.pixelSize: Style.font.bodySmall
           elide: Text.ElideRight
           width: parent.width
         }
 
         Text {
+          visible: !row.hasFile
           textFormat: Text.PlainText
-          text: row.hasFile ? row.ev.file : row.ev.id + ".wav · " + row.ev.hint
-          color: Qt.darker(root.fg, 1.5)
+          text: row.ev.id + ".wav · " + row.ev.hint
+          color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           elide: Text.ElideRight
@@ -724,24 +741,25 @@ Panel {
       PanelActionButton {
         id: playButton
         iconText: String.fromCodePoint(0xF040A)
-        tooltipText: row.hasFile ? "Preview" : "Add " + row.ev.id + ".wav to the sounds folder"
+        tooltipText: row.hasFile ? "Preview " + row.ev.file : "Add " + row.ev.id + ".wav to the sounds folder"
         enabled: row.hasFile
         foreground: root.fg
         fontFamily: root.fontFamily
-        anchors.right: rowSwitch.left
-        anchors.rightMargin: Style.space(8)
+        size: Style.space(28)
+        fontSize: Style.font.bodySmall
+        anchors.right: toggleButton.left
+        anchors.rightMargin: Style.space(4)
         anchors.verticalCenter: parent.verticalCenter
         onClicked: root.preview(row.ev.id)
       }
 
-      // The row owns the click, so the switch is presentation only here.
-      ToggleSwitch {
-        id: rowSwitch
+      EventToggle {
+        id: toggleButton
         checked: !!row.ev.enabled
-        interactive: false
-        foreground: root.fg
+        tooltipText: row.ev.enabled ? "Turn off " + row.ev.label : "Turn on " + row.ev.label
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
+        onToggled: root.toggleEvent(row.ev.id)
       }
     }
   }

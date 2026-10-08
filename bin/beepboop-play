@@ -2,7 +2,7 @@
 # One playback path for hooks, CLI and previews. No persistent audio connection.
 base="$(dirname "$(readlink -f "$0")")"
 common="$base/../share/common.sh"
-[[ -f $common ]] || common="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-sounds/common.sh"
+[[ -f $common ]] || common="${XDG_DATA_HOME:-$HOME/.local/share}/beepboop/common.sh"
 # shellcheck source=share/common.sh
 source "$common" || exit 1
 
@@ -93,7 +93,7 @@ play_sound() (
     log_result enabled success
   else
     log_result backend "failed:$rc"
-    printf 'omarchy-sounds: %s -> %s -> playback failed (%s)\n' "$event" "${file##*/}" "$rc" >&2
+    printf 'beepboop: %s -> %s -> playback failed (%s)\n' "$event" "${file##*/}" "$rc" >&2
     # Backend diagnostic is retained in the private runtime directory.
   fi
   exit "$rc"

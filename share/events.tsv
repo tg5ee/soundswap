@@ -1,6 +1,6 @@
 # id	label	hint	group	icon (Nerd Font codepoint)
 # The one list of sound events. The CLI, the bar panel and the README table all
-# read it; the hooks that fire each event live in hypr/, bin/omarchy-sounds-daemon
+# read it; the hooks that fire each event live in hypr/, bin/beepboop-daemon
 # and hooks/.
 startup	Startup	When you log in	System	f0342
 shutdown	Shutdown	Shut down, reboot or log out	System	f0425
@@ -28,4 +28,4 @@ charger-disconnect	Charger unplugged	Running on battery	Devices & power	f06a6
 battery-low	Low battery	Omarchy's 10% warning	Devices & power	f0083
 battery-critical	Critical battery	Battery at or below 5%	Devices & power	f10cd
 theme-change	Theme changed	You switch Omarchy theme	Omarchy	f03d8
-update-complete	System packages updated	System packages and migrations finish; other update stages may follow	Omarchy	f06b0
+update-complete	System Update	System packages and migrations finish; other update stages may follow	Omarchy	f06b0

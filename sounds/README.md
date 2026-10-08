@@ -41,4 +41,4 @@ are just silent, so add as many or as few as you like.
 | `update-complete` | Update finished | omarchy update completes |
 
 Keep click, Super, volume-key and window sounds short (under ~150 ms) so they
-feel snappy. Preview any of them from the bar panel, or `omarchy-sounds test <event>`.
+feel snappy. Preview any of them from the bar panel, or `beepboop test <event>`.

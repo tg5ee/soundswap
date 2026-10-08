@@ -1,11 +1,11 @@
--- Omarchy Sounds — installed by omarchy-sounds/install.sh; uninstall.sh removes it.
--- Each hook just calls omarchy-sounds-play, which checks your settings in
--- ~/.config/omarchy-sounds/config, so toggling sounds never needs a reload.
+-- BeepBoop — installed by beepboop/install.sh; uninstall.sh removes it.
+-- Each hook just calls beepboop-play, which checks your settings in
+-- ~/.config/beepboop/config, so toggling sounds never needs a reload.
 -- Events Hyprland can't see (lock, notifications, devices, charger) are
--- handled by omarchy-sounds-daemon instead.
+-- handled by beepboop-daemon instead.
 
 local function play(event)
-  local player = os.getenv("HOME") .. "/.local/bin/omarchy-sounds-play"
+  local player = os.getenv("HOME") .. "/.local/bin/beepboop-play"
   return "'" .. player:gsub("'", "'\\''") .. "' " .. event
 end
 
