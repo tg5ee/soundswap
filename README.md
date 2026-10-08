@@ -3,10 +3,29 @@
 System sounds for your desktop, covering the Windows sound scheme events that make
 sense on a Hyprland desktop plus a few Omarchy-specific ones: 27 events in all.
 
+## Install
+
+Run this from a terminal inside your Omarchy desktop session. The installer
+configures the Hyprland event hooks, bar widget, user services, Omarchy menu
+shutdown action, and bundled sounds. It needs no manual systemd or Omarchy
+configuration and does not use `sudo`.
+
 ```bash
-./install.sh          # install (safe to re-run to update)
-./uninstall.sh        # remove; add --purge to also delete your sounds/settings
+git clone https://github.com/tg5ee/omarchy-sounds.git
+cd omarchy-sounds
+./install.sh
 ```
+
+The installer preserves existing settings and sound files and can be rerun to
+update. To check the result, run `beepboop status`; the widget can be opened
+from the bar. Toggle shutdown audio in the widget or with `beepboop enable
+shutdown` / `beepboop disable shutdown`.
+
+## Uninstall
+
+From the checkout, run `./uninstall.sh`. This removes BeepBoop's hooks, widget,
+user services, and shutdown menu integration while preserving settings and
+sound files. To remove those too, run `./uninstall.sh --purge`.
 
 ## Adding sounds
 
@@ -134,6 +153,9 @@ git diff --check
 ```
 
 These checks cover parsing, playback routing, watcher cleanup, UI state changes,
-and safe install/uninstall behavior. Real login, lock/unlock, reboot, logout, and
-shutdown audibility require separate desktop testing. In particular, the late
-shutdown-service fallback may run after session audio has begun closing.
+and safe install/uninstall behavior. The installer routes Omarchy's shutdown
+menu through synchronous pre-playback; the shutdown service is a fallback for
+other shutdown paths and is ordered to stop before PipeWire and WirePlumber.
+Automated checks and preview commands cannot prove audibility through every
+login, lock/unlock, reboot, logout, or shutdown path; those still need desktop
+lifecycle testing.

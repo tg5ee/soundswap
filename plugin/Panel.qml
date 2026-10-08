@@ -353,7 +353,6 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    opticalSize: 20
     iconComponent: Component {
       Image {
         anchors.fill: parent
