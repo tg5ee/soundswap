@@ -63,4 +63,9 @@ check('directory changes include renames and no periodic JSON polling', () => {
   for (const signal of ['RowsInserted', 'RowsRemoved', 'DataChanged', 'ModelReset']) assert.match(source, new RegExp('on' + signal));
   assert.doesNotMatch(source, /interval: root\.opened \? 3000 : 20000/);
 });
+check('panel carries the SoundSwap identity and default pack name', () => {
+  assert.match(source, /moduleName: "soundswap\.sounds"/);
+  assert.match(source, /SoundSwap Original/);
+  assert.doesNotMatch(source, /BeepBoop|beepboop/);
+});
 process.exitCode = failures ? 1 : 0;

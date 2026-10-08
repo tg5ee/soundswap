@@ -1,3 +1,3 @@
 #!/bin/bash
-# BeepBoop: installed to ~/.config/omarchy/hooks/post-update.d/ by install.sh
-beepboop-play update-complete
+# SoundSwap: installed to ~/.config/omarchy/hooks/post-update.d/ by install.sh
+soundswap-play update-complete

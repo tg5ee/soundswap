@@ -6,26 +6,26 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// BeepBoop on the bar.
+// SoundSwap on the bar.
 //
 //   left click    open the panel
 //   right click   turn every sound on/off
 //   middle click  open the sounds folder
 //
-// The panel is a thin front end over the `beepboop` CLI: it reads state
-// with `beepboop json` and changes it with the same commands you'd type,
-// so the bar, the CLI and ~/.config/beepboop/config never disagree. The
+// The panel is a thin front end over the `soundswap` CLI: it reads state
+// with `soundswap json` and changes it with the same commands you'd type,
+// so the bar, the CLI and ~/.config/soundswap/config never disagree. The
 // event list itself (names, groups, icons) comes from events.tsv via that JSON,
 // so new events show up here without touching this file.
 Panel {
   id: root
-  moduleName: "beepboop.sounds"
-  ipcTarget: "beepboop.sounds"
+  moduleName: "soundswap.sounds"
+  ipcTarget: "soundswap.sounds"
   // manageIpc: false so this panel can own the single IpcHandler the target
   // permits — needed for the toggleSounds method below.
   manageIpc: false
 
-  readonly property string configDir: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/beepboop"
+  readonly property string configDir: (Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")) + "/soundswap"
 
   readonly property color fg: bar ? bar.foreground : Color.foreground
   readonly property color dim: Qt.darker(fg, 1.4)
@@ -34,6 +34,7 @@ Panel {
   property bool installed: false
   property bool soundsOn: true
   property real volume: 0.6
+  property string packName: "SoundSwap Original"
   property string soundsDir: configDir + "/sounds"
 
   // [{ id, label, hint, group, icon, enabled, file }] in events.tsv order
@@ -118,6 +119,7 @@ Panel {
         throw new Error("Invalid settings")
     } catch (e) { errorText = "Could not read sounds settings: invalid response."; return }
     soundsOn = data.enabled === true
+    packName = data.pack || "SoundSwap Original"
     if (!volumeSlider.dragging) volume = Number(data.volume)
     if (data.dir) soundsDir = data.dir
     var next = []
@@ -160,7 +162,7 @@ Panel {
 
   function pumpWrites() {
     if (writeBusy || writeQueue.length === 0) return
-    writeProc.command = ["beepboop"].concat(writeQueue[0])
+    writeProc.command = ["soundswap"].concat(writeQueue[0])
     writeQueue = writeQueue.slice(1)
     writeBusy = true
     writeProc.running = true
@@ -221,7 +223,7 @@ Panel {
 
   function preview(id) {
     var ev = findEvent(id)
-    if (ev && ev.file) Util.execArgv(["beepboop-play", "--force", id])
+    if (ev && ev.file) Util.execArgv(["soundswap-play", "--force", id])
   }
 
   // Volume changes preview the click sound (short, and what you'll hear most),
@@ -277,7 +279,7 @@ Panel {
   }
 
   IpcHandler {
-    target: "beepboop.sounds"
+    target: "soundswap.sounds"
 
     function open() { root.open() }
     function close() { root.close() }
@@ -312,7 +314,7 @@ Panel {
 
   Process {
     id: statusProc
-    command: ["beepboop", "json"]
+    command: ["soundswap", "json"]
     stdout: StdioCollector { id: statusOutput; waitForEnd: true }
     stderr: StdioCollector { id: statusErrors; waitForEnd: true }
     onExited: function(code, status) { root.finishStatus(code, status) }
@@ -356,7 +358,7 @@ Panel {
     iconComponent: Component {
       Image {
         anchors.fill: parent
-        source: Qt.resolvedUrl("beepboop.svg")
+        source: Qt.resolvedUrl("soundswap.svg")
         sourceSize.width: 48
         sourceSize.height: 48
         fillMode: Image.PreserveAspectFit
@@ -453,6 +455,17 @@ Panel {
 
               Text {
                 textFormat: Text.PlainText
+                text: root.packName
+                color: root.fg
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+                font.bold: true
+                elide: Text.ElideRight
+                width: parent.width
+              }
+
+              Text {
+                textFormat: Text.PlainText
                 text: root.heroStatusText.toUpperCase()
                 color: root.dim
                 font.family: root.fontFamily
@@ -469,7 +482,7 @@ Panel {
             visible: !root.installed
             width: parent.width
             textFormat: Text.PlainText
-            text: "Run install.sh from the BeepBoop folder to set up the sound hooks."
+            text: "Run install.sh from the SoundSwap folder to set up the sound hooks."
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall

@@ -1,6 +1,6 @@
 # shellcheck shell=bash disable=SC2034
 # Shared data parsing for the CLI, player and watchers. Never source user config.
-conf="${XDG_CONFIG_HOME:-$HOME/.config}/beepboop"
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/soundswap"
 cfg="$conf/config"
 share="${BASH_SOURCE[0]%/*}"
 defaults=$share/config.default
@@ -54,14 +54,14 @@ sound_file() {
 }
 
 runtime_dir() {
-  local base=${XDG_RUNTIME_DIR:-/tmp/beepboop-$UID}
+  local base=${XDG_RUNTIME_DIR:-/tmp/soundswap-$UID}
   if [[ -z ${XDG_RUNTIME_DIR:-} ]]; then
     (umask 077; mkdir -p -- "$base") || return 1
     [[ -O $base && ! -L $base ]] || return 1
     chmod 700 -- "$base" || return 1
   fi
   [[ -d $base && -O $base && ! -L $base ]] || return 1
-  state=$base/beepboop
+  state=$base/soundswap
   [[ ! -L $state ]] || return 1
   (umask 077; mkdir -p -- "$state") || return 1
   [[ -O $state ]] || return 1

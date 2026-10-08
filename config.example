@@ -1,6 +1,6 @@
 # Working installation preferences; optional, not installed automatically.
 # Debug logging was enabled on the source PC; keep it off for normal use.
-# BeepBoop settings. Change with `beepboop` or the bar panel, or edit by hand.
+# SoundSwap settings. Change with `soundswap` or the bar panel, or edit by hand.
 ENABLED=1
 VOLUME=0.55
 
@@ -36,5 +36,5 @@ BATTERY_CRITICAL=1
 THEME_CHANGE=1
 UPDATE_COMPLETE=1
 
-# Record every trigger to $XDG_RUNTIME_DIR/beepboop/events.log (beepboop log)
+# Record every trigger to $XDG_RUNTIME_DIR/soundswap/events.log (soundswap log)
 LOG=0

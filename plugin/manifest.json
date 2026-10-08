@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "id": "beepboop.sounds",
-  "name": "BeepBoop",
-  "version": "1.0.0",
-  "author": "beepboop",
+  "id": "soundswap.sounds",
+  "name": "SoundSwap",
+  "version": "2.0.0",
+  "author": "tg5ee",
   "license": "MIT",
-  "description": "BeepBoop system sounds for your desktop: startup, shutdown, mouse clicks, window open, window close, and tapping Super. Turn them on and off, set the volume, and preview each sound from the bar.",
+  "description": "System Sounds for Omarchy. Manage SoundSwap Original or replace individual event sounds with your own.",
   "kinds": ["bar-widget"],
   "entryPoints": {
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "BeepBoop",
-    "description": "Turn BeepBoop system sounds on and off, set their volume, and preview each one.",
+    "displayName": "SoundSwap",
+    "description": "Toggle, preview, and replace Omarchy system sounds.",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right"

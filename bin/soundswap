@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# beepboop — control BeepBoop sounds.
+# soundswap — control SoundSwap sounds.
 
 # Prefer the checkout helper when running from source.
 base="$(dirname "$(readlink -f "$0")")"
 common="$base/../share/common.sh"
-[[ -f $common ]] || common="${XDG_DATA_HOME:-$HOME/.local/share}/beepboop/common.sh"
+[[ -f $common ]] || common="${XDG_DATA_HOME:-$HOME/.local/share}/soundswap/common.sh"
 # shellcheck source=share/common.sh
 source "$common" || exit 1
-player="$base/beepboop-play"
+player="$base/soundswap-play"
 
 usage() {
   cat <<USAGE
-Usage: beepboop <command>
+Usage: soundswap <command>
 
   status               Show settings and which sound files are present
   events               List every event and what triggers it
@@ -75,23 +75,23 @@ case "${1:-}" in
     for candidate in pw-play paplay mpv; do
       if command -v "$candidate" >/dev/null; then backend=$candidate; break; fi
     done
-    logger -t beepboop "shutdown early-start file=${file:-none} backend=$backend" || true
+    logger -t soundswap "shutdown early-start file=${file:-none} backend=$backend" || true
     bash "$player" --wait shutdown &
     playback_pid=$!
-    logger -t beepboop "shutdown playback-pid=$playback_pid" || true
+    logger -t soundswap "shutdown playback-pid=$playback_pid" || true
     if wait "$playback_pid"; then
       : > "$state/shutdown.preplayed"
-      logger -t beepboop 'shutdown early-complete status=0' || true
+      logger -t soundswap 'shutdown early-complete status=0' || true
     else
       playback_status=$?
-      logger -t beepboop "shutdown early-failed status=$playback_status" || true
+      logger -t soundswap "shutdown early-failed status=$playback_status" || true
     fi
     if omarchy-system-shutdown; then
       exit 0
     else
       shutdown_status=$?
       rm -f -- "$state/shutdown.preplayed"
-      logger -t beepboop "shutdown request-failed status=$shutdown_status" || true
+      logger -t soundswap "shutdown request-failed status=$shutdown_status" || true
       exit "$shutdown_status"
     fi ;;
   shutdown-stop)
@@ -112,13 +112,13 @@ case "${1:-}" in
     case "$2" in
       on)  setvar LOG 1 || exit 1; echo "Logging triggers to $log" ;;
       off) setvar LOG 0 || exit 1; echo "Logging off" ;;
-      '')  read_config; [ "${LOG:-0}" = 1 ] || echo "Logging is off; turn it on with: beepboop log on"
+      '')  read_config; [ "${LOG:-0}" = 1 ] || echo "Logging is off; turn it on with: soundswap log on"
            mkdir -p "${log%/*}"; touch "$log"; exec tail -f "$log" ;;
       *)   echo "Unknown log option: $2" >&2; exit 2 ;;
     esac ;;
   json)
     enabled=false; [[ $ENABLED == 1 ]] && enabled=true
-    printf '{"enabled":%s,"volume":%s,"dir":' "$enabled" "$VOLUME"
+    printf '{"enabled":%s,"volume":%s,"pack":"SoundSwap Original","dir":' "$enabled" "$VOLUME"
     json_str "$conf/sounds"
     printf ',"events":['
     sep=

@@ -1,6 +1,6 @@
 # id	label	hint	group	icon (Nerd Font codepoint)
 # The one list of sound events. The CLI, the bar panel and the README table all
-# read it; the hooks that fire each event live in hypr/, bin/beepboop-daemon
+# read it; the hooks that fire each event live in hypr/, bin/soundswap-daemon
 # and hooks/.
 startup	Startup	When you log in	System	f0342
 shutdown	Shutdown	Shut down, reboot or log out	System	f0425
