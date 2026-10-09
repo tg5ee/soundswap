@@ -87,8 +87,10 @@ setvar() (
   local key=$1 value=$2 tmp input=$cfg
   umask 077
   mkdir -p -- "$conf" || return 1
-  exec 9>"$conf/config.lock" || return 1
+  [[ ! -L $conf/config.lock && ( ! -e $conf/config.lock || -f $conf/config.lock ) ]] || { echo 'Unsafe settings lock file' >&2; return 1; }
+  exec 9>>"$conf/config.lock" || return 1
   flock -w 5 9 || return 1
+  [[ ! -L $conf/config.lock && -f /proc/self/fd/9 && $conf/config.lock -ef /proc/self/fd/9 ]] || { echo 'Settings lock changed while opening' >&2; return 1; }
   [[ ! -e $cfg || ( -f $cfg && -w $cfg ) ]] || { echo 'Settings file is not writable' >&2; return 1; }
   if [[ $value == toggle ]]; then
     read_config

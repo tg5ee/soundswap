@@ -80,6 +80,139 @@ class InstallTests(unittest.TestCase):
         self.assertNotIn('CLICK=1\n', installed)
         self.assertNotIn('VOLUME=0.6\n', installed)
 
+    def test_install_rejects_poisoned_config_lock_without_truncating_target(self):
+        conf = self.config / 'soundswap'
+        conf.mkdir()
+        victim = self.home / 'private.txt'
+        victim.write_text('keep this data')
+        (conf / 'config.lock').symlink_to(victim)
+        result = self.run_script('install.sh')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(victim.read_text(), 'keep this data')
+
+    def test_install_preserves_private_config_mode_on_upgrade(self):
+        conf = self.config / 'soundswap'
+        conf.mkdir()
+        config = conf / 'config'
+        config.write_text('CLICK=0\n')
+        config.chmod(0o600)
+        result = self.run_script('install.sh')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+
+    def test_install_rejects_symlinked_parent_and_dotdot_root(self):
+        outside = self.home / 'outside'
+        outside.mkdir()
+        (outside / 'hypr').mkdir()
+        (outside / 'hypr/hyprland.lua').write_text('keep_before = true\n')
+        linked = self.home / 'linked-config'
+        linked.symlink_to(outside, target_is_directory=True)
+        self.env['XDG_CONFIG_HOME'] = str(linked)
+        result = self.run_script('install.sh')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((outside / 'soundswap').exists())
+        linked.unlink()
+        self.env['XDG_CONFIG_HOME'] = str(self.config / '..' / 'other-config')
+        other = self.home / 'other-config'
+        (other / 'hypr').mkdir(parents=True)
+        (other / 'hypr/hyprland.lua').write_text('keep_before = true\n')
+        result = self.run_script('install.sh')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((other / 'soundswap').exists())
+
+    def test_install_rejects_symlinked_legacy_parent(self):
+        outside = self.home / 'outside'
+        outside.mkdir()
+        marker = outside / 'beepboop.sounds/Panel.qml'
+        marker.parent.mkdir()
+        marker.write_text('keep')
+        omarchy = self.config / 'omarchy'
+        omarchy.mkdir()
+        (omarchy / 'plugins').symlink_to(outside, target_is_directory=True)
+        result = self.run_script('install.sh')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(marker.read_text(), 'keep')
+        self.assertFalse((self.home / '.local/bin/soundswap').exists())
+
+    def test_legacy_migration_rejects_symlinked_child_directories(self):
+        outside = self.home / 'outside'
+        outside.mkdir()
+        (outside / 'private.txt').write_text('keep')
+        for root, child in ((self.config / 'beepboop', 'sounds'),
+                            (self.data / 'beepboop', 'original'),
+                            (self.state / 'beepboop', 'backups')):
+            root.mkdir(parents=True)
+            link = root / child
+            link.symlink_to(outside, target_is_directory=True)
+            result = self.run_script('install.sh')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual((outside / 'private.txt').read_text(), 'keep')
+            self.assertEqual(list(outside.iterdir()), [outside / 'private.txt'])
+            self.assertTrue(root.exists())
+            link.unlink()
+
+    def test_legacy_migration_rejects_dangling_config_symlink(self):
+        legacy = self.config / 'beepboop'
+        legacy.mkdir()
+        victim = self.home / 'outside-config'
+        (legacy / 'config').symlink_to(victim)
+        result = self.run_script('install.sh')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(victim.exists())
+        self.assertTrue((legacy / 'config').is_symlink())
+
+    def test_uninstall_rejects_traversal_event_before_removals(self):
+        self.assertEqual(self.run_script('install.sh').returncode, 0)
+        victim = self.home / 'victim.wav'
+        victim.write_text('keep')
+        events = self.data / 'soundswap/events.tsv'
+        events.write_text('../../../../victim\tBad\tBad\tSystem\ticon\n' + events.read_text())
+        result = self.run_script('uninstall.sh')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(victim.read_text(), 'keep')
+        self.assertTrue((self.home / '.local/bin/soundswap').exists())
+
+    def test_purge_rejects_symlinked_config_parent(self):
+        self.assertEqual(self.run_script('install.sh').returncode, 0)
+        outside = self.home / 'outside'
+        outside.mkdir()
+        targeted = outside / 'soundswap'
+        targeted.mkdir()
+        victim = targeted / 'private.txt'
+        victim.write_text('keep')
+        linked = self.home / 'linked-config'
+        linked.symlink_to(outside, target_is_directory=True)
+        self.env['XDG_CONFIG_HOME'] = str(linked)
+        result = self.run_script('uninstall.sh', '--purge')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(victim.read_text(), 'keep')
+
+    def test_normal_purge_removes_settings_after_backup(self):
+        self.assertEqual(self.run_script('install.sh').returncode, 0)
+        custom = self.config / 'soundswap/sounds/custom.wav'
+        custom.write_bytes(b'user sound')
+        result = self.run_script('uninstall.sh', '--purge')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.config / 'soundswap').exists())
+        self.assertIn(b'user sound', [p.read_bytes() for p in (self.state / 'soundswap/backups').rglob('custom.wav')])
+
+    def test_purge_rechecks_parent_after_preflight(self):
+        self.assertEqual(self.run_script('install.sh').returncode, 0)
+        outside = self.home / 'outside'
+        targeted = outside / 'soundswap'
+        targeted.mkdir(parents=True)
+        victim = targeted / 'private.txt'
+        victim.write_text('keep')
+        shell = self.tools / 'omarchy-shell'
+        shell.write_text('#!/bin/bash\n'
+                         'if [[ "$*" == "shell rescanPlugins" ]]; then\n'
+                         '  mv "$XDG_CONFIG_HOME" "$HOME/saved-config"\n'
+                         '  ln -s "$HOME/outside" "$XDG_CONFIG_HOME"\n'
+                         'fi\n')
+        result = self.run_script('uninstall.sh', '--purge')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(victim.read_text(), 'keep')
+
     def test_malformed_markers_refused_before_install_or_uninstall(self):
         cases = (
             '-- soundswap >>>\nkeep_after = true\n',

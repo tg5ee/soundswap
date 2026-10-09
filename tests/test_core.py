@@ -194,6 +194,35 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(self.cli('off').returncode, 0)
         self.assertFalse(json.loads(self.cli('json').stdout)['enabled'])
 
+    def test_setting_change_rejects_poisoned_config_lock(self):
+        victim = self.home / 'private.txt'
+        victim.write_text('keep this data')
+        (self.conf / 'config.lock').symlink_to(victim)
+        result = self.cli('off')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(victim.read_text(), 'keep this data')
+        self.assertIn('ENABLED=1', self.cfg.read_text())
+
+    def test_setting_change_rejects_fifo_lock_without_blocking(self):
+        os.mkfifo(self.conf / 'config.lock')
+        result = self.cli('off')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Unsafe settings lock file', result.stderr)
+        self.assertIn('ENABLED=1', self.cfg.read_text())
+
+    def test_setting_change_detects_lock_replaced_during_acquisition(self):
+        victim = self.home / 'private.txt'
+        victim.write_text('keep this data')
+        self.fake('flock', 'if [[ "$*" == "-w 5 9" ]]; then\n'
+                  '  rm -- "$XDG_CONFIG_HOME/soundswap/config.lock"\n'
+                  '  ln -s "$HOME/private.txt" "$XDG_CONFIG_HOME/soundswap/config.lock"\n'
+                  'fi')
+        result = self.cli('off')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Settings lock changed while opening', result.stderr)
+        self.assertEqual(victim.read_text(), 'keep this data')
+        self.assertIn('ENABLED=1', self.cfg.read_text())
+
     def test_parallel_updates_are_not_lost(self):
         self.cfg.write_text(self.cfg.read_text() + '# padding\n' * 10000)
         commands = [('off',), ('disable', 'click'), ('volume', '0.35'), ('disable', 'workspace')]

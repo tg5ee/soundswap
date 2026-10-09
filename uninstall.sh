@@ -37,6 +37,31 @@ say() { printf '==> %s\n' "$*"; }
 warn() { printf 'Warning: %s\n' "$*" >&2; }
 fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
+safe_path() {
+  local path=$1 part prefix='' rest
+  [[ $path = /* && $path != *[$'\001'-$'\037']* ]] || fail "Unsafe installation path: $path"
+  rest=${path#/}
+  while [[ -n $rest ]]; do
+    part=${rest%%/*}
+    [[ -n $part && $part != . && $part != .. ]] || fail "Unsafe path component in: $path"
+    prefix+=/$part
+    [[ ! -L $prefix ]] || fail "Refusing symlinked path component: $prefix"
+    [[ $rest != */* || ! -e $prefix || -d $prefix ]] || fail "Non-directory parent in: $path"
+    [[ $rest == */* ]] || break
+    rest=${rest#*/}
+  done
+}
+
+for path in "$HOME" "$CONFIG_ROOT" "$DATA_ROOT" "$STATE_ROOT" "$BIN" "$CONF" "$HYPR" \
+            "$MAIN" "$UNIT_DIR" "$SHARE" "$SHARE/original" \
+            "$STATE_ROOT/soundswap/backups" "$CONFIG_ROOT/omarchy/hooks" \
+            "$CONFIG_ROOT/omarchy/plugins" "$PLUGIN_DIR" \
+            "$CONFIG_ROOT/omarchy/extensions" "$MENU"; do
+  safe_path "$path"
+done
+for hook in battery-low theme-set post-update; do safe_path "$CONFIG_ROOT/omarchy/hooks/$hook.d"; done
+for id in "${OLD_PLUGIN_IDS[@]}"; do safe_path "$CONFIG_ROOT/omarchy/plugins/$id"; done
+
 marker=0
 marker_count() {
   awk -v b="$2" -v e="$3" '
@@ -58,9 +83,6 @@ fi
 for tool in bash timeout systemctl cp mv mktemp awk mkdir date rm rmdir; do
   command -v "$tool" >/dev/null || fail "Missing required command: $tool"
 done
-for root in "$HOME" "$CONFIG_ROOT" "$DATA_ROOT" "$STATE_ROOT"; do
-  [[ $root = /* && $root != *$'\n'* && $root != *$'\r'* && $root != *$'\t'* ]] || fail 'Installation paths must be absolute and contain no control characters.'
-done
 if [[ -f $MENU ]]; then
   marker_count "$MENU" "$MENU_BEGIN" "$MENU_END" >/dev/null || fail 'Malformed SoundSwap shutdown menu markers; preserve the menu and repair the marker block first.'
   marker_count "$MENU" "$OLD_MENU_BEGIN" "$OLD_MENU_END" >/dev/null || fail 'Malformed BeepBoop shutdown menu markers; preserve the menu and repair the marker block first.'
@@ -76,6 +98,14 @@ for file in "${FILES[@]}" "$CONFIG_ROOT/omarchy/shell.json" "$MENU"; do
 done
 [[ ! -L $CONF ]] || fail "Refusing a symlinked settings directory: $CONF"
 [[ ! -L $STATE_ROOT/soundswap && ( ! -e $STATE_ROOT/soundswap || -d $STATE_ROOT/soundswap ) ]] || fail "Refusing a symlinked state directory: $STATE_ROOT/soundswap"
+events_to_remove=()
+if [[ -f $SHARE/events.tsv ]]; then
+  while IFS=$'\t' read -r event _; do
+    [[ -n $event && $event != \#* ]] || continue
+    [[ $event =~ ^[a-z][a-z0-9-]*$ ]] || fail "Unsafe sound event in $SHARE/events.tsv: $event"
+    events_to_remove+=("$event")
+  done < "$SHARE/events.tsv"
+fi
 stage=$(mktemp -d /tmp/soundswap-uninstall.XXXXXX)
 trap 'rm -rf -- "$stage"' EXIT
 
@@ -83,6 +113,8 @@ BACKUP="$STATE_ROOT/soundswap/backups/$(date +%Y%m%d-%H%M%S-%N)"
 backup() {
   [[ -e $1 || -L $1 ]] || return 0
   local dest="$BACKUP/${1#/}"
+  safe_path "${1%/*}"
+  safe_path "$dest"
   mkdir -p "${dest%/*}"
   cp -a -- "$1" "$dest"
 }
@@ -135,11 +167,11 @@ if command -v omarchy >/dev/null; then
   for id in "${OLD_PLUGIN_IDS[@]}"; do omarchy plugin disable "$id" 2>/dev/null || true; done
 fi
 # Remove only bundled event files. Unknown files under original/ are retained.
-if [[ -f $SHARE/events.tsv && -d $SHARE/original && ! -L $SHARE/original ]]; then
-  while IFS=$'\t' read -r event _; do
-    [[ -n $event && $event != \#* ]] || continue
+if [[ -d $SHARE/original && ! -L $SHARE/original ]]; then
+  safe_path "$SHARE/original"
+  for event in "${events_to_remove[@]}"; do
     for ext in wav ogg oga flac mp3; do rm -f -- "$SHARE/original/$event.$ext"; done
-  done < "$SHARE/events.tsv"
+  done
   rmdir "$SHARE/original" 2>/dev/null || true
 fi
 # Stop watchers first; removing the player before the shutdown unit prevents an uninstall chime.
@@ -162,6 +194,7 @@ for hook in battery-low theme-set post-update; do
   done
 done
 for id in "${OLD_PLUGIN_IDS[@]}"; do
+  safe_path "$CONFIG_ROOT/omarchy/plugins/$id"
   [[ -d $CONFIG_ROOT/omarchy/plugins/$id ]] && { backup "$CONFIG_ROOT/omarchy/plugins/$id"; rm -rf -- "$CONFIG_ROOT/omarchy/plugins/$id"; }
 done
 [[ -f $HYPR/beepboop.lua ]] && { backup "$HYPR/beepboop.lua"; rm -f -- "$HYPR/beepboop.lua"; }
@@ -172,7 +205,9 @@ if command -v omarchy-shell >/dev/null; then
   timeout 5 omarchy-shell shell rescanPlugins >/dev/null || warn 'Widget rescan failed; reload the Omarchy shell when convenient.'
 fi
 if [[ ${1:-} = --purge ]]; then
+  safe_path "$CONF"
   backup "$CONF"
+  safe_path "$CONF"
   rm -rf -- "$CONF"
   say "Removed settings and sounds; backups: $BACKUP"
 else

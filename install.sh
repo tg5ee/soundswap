@@ -41,6 +41,35 @@ say() { printf '==> %s\n' "$*"; }
 warn() { printf 'Warning: %s\n' "$*" >&2; }
 fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
+safe_path() {
+  local path=$1 part prefix='' rest
+  [[ $path = /* && $path != *[$'\001'-$'\037']* ]] || fail "Unsafe installation path: $path"
+  rest=${path#/}
+  while [[ -n $rest ]]; do
+    part=${rest%%/*}
+    [[ -n $part && $part != . && $part != .. ]] || fail "Unsafe path component in: $path"
+    prefix+=/$part
+    [[ ! -L $prefix ]] || fail "Refusing symlinked path component: $prefix"
+    [[ $rest != */* || ! -e $prefix || -d $prefix ]] || fail "Non-directory parent in: $path"
+    [[ $rest == */* ]] || break
+    rest=${rest#*/}
+  done
+}
+
+for path in "$HOME" "$CONFIG_ROOT" "$DATA_ROOT" "$STATE_ROOT" "$BIN" "$CONF" "$CONF/sounds" \
+            "$HYPR" "$MAIN" "$UNIT_DIR" "$SHARE" "$SHARE/original" \
+            "$STATE_ROOT/soundswap/backups" "$HOOKS" "$CONFIG_ROOT/omarchy/plugins" \
+            "$PLUGIN_DIR" "$CONFIG_ROOT/omarchy/extensions" "$MENU"; do
+  safe_path "$path"
+done
+for hook in battery-low theme-set post-update; do safe_path "$HOOKS/$hook.d"; done
+for id in "${OLD_PLUGIN_IDS[@]}"; do safe_path "$CONFIG_ROOT/omarchy/plugins/$id"; done
+for legacy in beepboop omarchy-sounds; do
+  for child in config config.lock sounds; do safe_path "$CONFIG_ROOT/$legacy/$child"; done
+  safe_path "$DATA_ROOT/$legacy/original"
+  safe_path "$STATE_ROOT/$legacy/backups"
+done
+
 required_tools=(bash flock setsid timeout luac Hyprland systemctl install cp mv mktemp awk grep sed cmp date tail mkdir find sort uniq tr rm ps journalctl dbus-monitor gdbus udevadm)
 missing_tools=()
 for tool in "${required_tools[@]}"; do
@@ -91,10 +120,6 @@ marker_count "$MAIN" "$BEGIN" "$END" >/dev/null || fail 'Malformed soundswap mar
 marker_count "$MAIN" "$OLD_BEGIN" "$OLD_END" >/dev/null || fail 'Malformed legacy beepboop markers; repair the paired block first.'
 marker_count "$MAIN" "$OLDER_BEGIN" "$OLDER_END" >/dev/null || fail 'Malformed legacy omarchy-sounds markers; repair the paired block first.'
 
-for root in "$HOME" "$CONFIG_ROOT" "$DATA_ROOT" "$STATE_ROOT"; do
-  [[ $root = /* && $root != *$'\n'* && $root != *$'\r'* && $root != *$'\t'* ]] || fail 'Installation paths must be absolute and contain no control characters.'
-done
-
 if [[ -f $MENU ]]; then
   marker_count "$MENU" "$MENU_BEGIN" "$MENU_END" >/dev/null || fail 'Malformed SoundSwap shutdown menu markers; preserve the menu and repair the marker block first.'
   marker_count "$MENU" "$OLD_MENU_BEGIN" "$OLD_MENU_END" >/dev/null || fail 'Malformed BeepBoop shutdown menu markers; preserve the menu and repair the marker block first.'
@@ -121,11 +146,13 @@ done
 for dir in "$CONFIG_ROOT/beepboop" "$CONFIG_ROOT/omarchy-sounds" "$DATA_ROOT/beepboop" "$DATA_ROOT/omarchy-sounds" "$STATE_ROOT/beepboop" "$STATE_ROOT/omarchy-sounds"; do
   [[ ( ! -e $dir && ! -L $dir ) || ( -d $dir && ! -L $dir ) ]] || fail "Refusing unsafe legacy directory: $dir"
 done
+[[ ! -L $CONF/config.lock && ( ! -e $CONF/config.lock || -f $CONF/config.lock ) ]] || fail "Refusing unsafe config lock: $CONF/config.lock"
 for file in "$SRC"/bin/* "$SRC/share/common.sh" "$SRC"/hooks/*; do bash -n "$file"; done
 luac -p "$SRC/hypr/soundswap.lua" "$MAIN"
 
 stage=$(mktemp -d /tmp/soundswap-install.XXXXXX)
-trap 'rm -rf -- "$stage"' EXIT
+config_tmp=
+trap '[[ -z $config_tmp ]] || rm -f -- "$config_tmp"; rm -rf -- "$stage"' EXIT
 
 # -----------------------------------------------------------------------------
 # Stage menu and Hyprland changes before touching any installed files.
@@ -196,6 +223,8 @@ BACKUP="$STATE_ROOT/soundswap/backups/$(date +%Y%m%d-%H%M%S-%N)"
 backup() {
   [[ -e $1 || -L $1 ]] || return 0
   local dest="$BACKUP/${1#/}"
+  safe_path "${1%/*}"
+  safe_path "$dest"
   mkdir -p "${dest%/*}"
   cp -a -- "$1" "$dest"
 }
@@ -205,6 +234,8 @@ migrate_first() {
   shift
   for src in "$@"; do
     [[ -e $src ]] || continue
+    safe_path "$src"
+    safe_path "$dest"
     if [[ -e $dest ]]; then
       warn "Both $src and $dest exist; leaving $src for manual cleanup."
       continue
@@ -216,9 +247,11 @@ migrate_first() {
 
 migrate_first "$STATE_ROOT/soundswap" "$STATE_ROOT/beepboop" "$STATE_ROOT/omarchy-sounds"
 [[ ! -L $STATE_ROOT/soundswap && ( ! -e $STATE_ROOT/soundswap || -d $STATE_ROOT/soundswap ) ]] || fail "Refusing migrated non-directory target: $STATE_ROOT/soundswap"
+safe_path "$STATE_ROOT/soundswap/backups"
 
 put() {
   local src=$1 dest=$2 mode=$3 tmp
+  safe_path "${dest%/*}"
   mkdir -p "${dest%/*}"
   backup "$dest"
   tmp=$(mktemp "${dest%/*}/.soundswap.XXXXXX")
@@ -247,7 +280,11 @@ migrate_first "$CONF" "$CONFIG_ROOT/beepboop" "$CONFIG_ROOT/omarchy-sounds"
 migrate_first "$SHARE" "$DATA_ROOT/beepboop" "$DATA_ROOT/omarchy-sounds"
 for dir in "$CONF" "$CONF/sounds" "$SHARE" "$SHARE/original"; do
   [[ ! -L $dir && ( ! -e $dir || -d $dir ) ]] || fail "Refusing migrated non-directory target: $dir"
+  safe_path "$dir"
 done
+safe_path "$CONF/config"
+safe_path "$CONF/config.lock"
+safe_path "$STATE_ROOT/soundswap/backups"
 
 # Retire legacy integrations only after the new Hyprland configuration is live.
 for unit in "${OLD_WATCHER_UNITS[@]}"; do
@@ -290,11 +327,15 @@ for name in common.sh events.tsv; do put "$SRC/share/$name" "$SHARE/$name" 644; 
 put "$SRC/config.default" "$SHARE/config.default" 644
 put "$stage/menu.jsonc" "$MENU" 644
 mkdir -p "$CONF/sounds"
-exec {config_lock}> "$CONF/config.lock"
+[[ ! -L $CONF/config.lock && ( ! -e $CONF/config.lock || -f $CONF/config.lock ) ]] || fail "Refusing unsafe config lock: $CONF/config.lock"
+exec {config_lock}>> "$CONF/config.lock"
 flock -x "$config_lock"
+[[ ! -L $CONF/config.lock && -f /proc/self/fd/$config_lock && $CONF/config.lock -ef /proc/self/fd/$config_lock ]] || fail "Config lock changed while opening: $CONF/config.lock"
 backup "$CONF/config"
 [[ -f $CONF/config ]] || cp "$SRC/config.default" "$CONF/config"
 # Replace known stale legacy comments while preserving all settings and unknown lines.
+config_tmp=$(mktemp "$CONF/.config.XXXXXX")
+cp -p -- "$CONF/config" "$config_tmp"
 awk '
   $0 == "# BeepBoop settings. Change with `beepboop` or the bar panel, or edit by hand." {
     print "# SoundSwap settings. Change with `soundswap` or the bar panel, or edit by hand."
@@ -313,7 +354,9 @@ awk '
     next
   }
   { print }
-' "$CONF/config" > "$stage/config-comments" && mv -- "$stage/config-comments" "$CONF/config"
+' "$CONF/config" > "$config_tmp"
+mv -- "$config_tmp" "$CONF/config"
+config_tmp=
 [[ ! -s $CONF/config || -z $(tail -c 1 "$CONF/config") ]] || printf '\n' >> "$CONF/config"
 while IFS= read -r line || [[ -n $line ]]; do
   [[ $line =~ ^([A-Z_]+)= ]] || continue
