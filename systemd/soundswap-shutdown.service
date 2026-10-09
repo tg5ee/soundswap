@@ -2,7 +2,7 @@
 Description=SoundSwap shutdown chime
 PartOf=graphical-session.target
 # Stopped before the audio stack on poweroff/reboot/logout, so the sound can still play.
-After=pipewire.service pipewire-pulse.service wireplumber.service
+After=pipewire.service pipewire-pulse.service wireplumber.service pulseaudio.service
 
 [Service]
 Environment="PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin"

@@ -22,7 +22,7 @@ Usage: soundswap <command>
   event-volume EVENT N Set event gain (0.0-1.0), multiplied by master volume
   test [EVENT]         Play one event, or all of them in turn
   preview EVENT        Play one event even if it's switched off
-  poweroff             Play shutdown before the system starts poweroff
+  poweroff | reboot | logout  Play shutdown before Omarchy's lifecycle action
   dir                  Print the sounds folder
   log [on|off]         Record every trigger; with no argument, watch the log
   json                 Print settings as JSON (used by the bar panel)
@@ -31,7 +31,7 @@ USAGE
 }
 
 doctor() {
-  local failed=0 tool player= config_root=${XDG_CONFIG_HOME:-$HOME/.config}
+  local failed=0 tool player='' config_root=${XDG_CONFIG_HOME:-$HOME/.config}
   local plugin_dir="$config_root/omarchy/plugins/soundswap.sounds"
   local shell_config="$config_root/omarchy/shell.json"
   local hypr_dir="$config_root/hypr" main="$config_root/hypr/hyprland.lua"
@@ -64,11 +64,14 @@ doctor() {
   else
     report WARN 'no audio player found (pw-play, paplay, or mpv); install PipeWire, PulseAudio, or mpv to play sounds'
   fi
-  if command -v omarchy-system-shutdown >/dev/null 2>&1; then
-    report PASS 'Omarchy shutdown command is available'
-  else
-    report WARN 'omarchy-system-shutdown is unavailable; the SoundSwap shutdown menu action will not work'
-  fi
+  for lifecycle in shutdown reboot logout; do
+    local action="omarchy-system-$lifecycle"
+    if command -v "$action" >/dev/null 2>&1; then
+      report PASS "Omarchy lifecycle command is available: $action"
+    else
+      report WARN "$action is unavailable; its SoundSwap menu action cannot invoke Omarchy's original action. Check your Omarchy installation and restore the helper"
+    fi
+  done
   if [[ -n ${XDG_RUNTIME_DIR:-} && -d $XDG_RUNTIME_DIR && -w $XDG_RUNTIME_DIR ]]; then
     report PASS 'writable desktop runtime directory is available'
   else
@@ -190,17 +193,29 @@ case "${1:-}" in
     if [ -n "$2" ]; then valid_event "$2" || exit 1; bash "$player" --wait "$2"
     else for e in "${EVENTS[@]}"; do sound_file "$e"; [ -n "$file" ] && { echo "$e"; bash "$player" --wait "$e" || exit; }; done; fi ;;
   preview) valid_event "${2:-}" || exit 1; bash "$player" --wait --force "$2" ;;
-  poweroff)
-    runtime_dir || exit 1
-    exec 9>"$state/poweroff.lock" || exit 1
-    flock -n 9 || exit 0
+  poweroff|reboot|logout)
+    lifecycle=$1
+    case $lifecycle in
+      poweroff) stock_action=omarchy-system-shutdown ;;
+      reboot) stock_action=omarchy-system-reboot ;;
+      logout) stock_action=omarchy-system-logout ;;
+    esac
+    if ! runtime_dir; then
+      [[ $lifecycle == poweroff ]] && exit 1
+      "$stock_action"
+      exit $?
+    fi
+    if [[ $lifecycle == poweroff ]]; then
+      exec 9>"$state/poweroff.lock" || exit 1
+      flock -n 9 || exit 0
+    fi
     sound_file shutdown
     backend=none
     for candidate in pw-play paplay mpv; do
       if command -v "$candidate" >/dev/null; then backend=$candidate; break; fi
     done
     logger -t soundswap "shutdown early-start file=${file:-none} backend=$backend" || true
-    bash "$player" --wait shutdown &
+    timeout --kill-after=1s 24s bash "$player" --wait shutdown &
     playback_pid=$!
     logger -t soundswap "shutdown playback-pid=$playback_pid" || true
     if wait "$playback_pid"; then
@@ -210,7 +225,7 @@ case "${1:-}" in
       playback_status=$?
       logger -t soundswap "shutdown early-failed status=$playback_status" || true
     fi
-    if omarchy-system-shutdown; then
+    if "$stock_action"; then
       exit 0
     else
       shutdown_status=$?

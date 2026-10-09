@@ -132,15 +132,24 @@ trap 'rm -rf -- "$stage"' EXIT
 # -----------------------------------------------------------------------------
 menu_source=$MENU
 [[ -f $menu_source ]] || { printf '{\n}\n' > "$stage/empty-menu.jsonc"; menu_source="$stage/empty-menu.jsonc"; }
-if grep -q '"system.shutdown"[[:space:]]*:' "$menu_source" && ! grep -Fxq -- "$MENU_BEGIN" "$menu_source" && ! grep -Fxq -- "$OLD_MENU_BEGIN" "$menu_source" && ! grep -Fxq -- "$OLDER_MENU_BEGIN" "$menu_source"; then
-  fail 'The user menu already customizes system.shutdown; preserve that action and resolve the conflict manually.'
-fi
+awk -v b="$MENU_BEGIN" -v e="$MENU_END" -v ob="$OLD_MENU_BEGIN" -v oe="$OLD_MENU_END" -v xb="$OLDER_MENU_BEGIN" -v xe="$OLDER_MENU_END" '
+  $0 == ob || $0 == xb || $0 == b { skip=1; next }
+  $0 == oe || $0 == xe || $0 == e { skip=0; next }
+  !skip { print }
+' "$menu_source" > "$stage/menu-unowned.jsonc"
+for menu_action in logout reboot shutdown; do
+  if grep -q "\"system.$menu_action\"[[:space:]]*:" "$stage/menu-unowned.jsonc"; then
+    fail "The user menu already customizes system.$menu_action; preserve that action and resolve the conflict manually."
+  fi
+done
 awk -v b="$MENU_BEGIN" -v e="$MENU_END" -v ob="$OLD_MENU_BEGIN" -v oe="$OLD_MENU_END" -v xb="$OLDER_MENU_BEGIN" -v xe="$OLDER_MENU_END" '
   $0 == ob || $0 == xb || $0 == b { skip=1; next }
   $0 == oe || $0 == xe || $0 == e { skip=0; next }
   !skip && !added && /^[[:space:]]*\{[[:space:]]*$/ {
     print
     print b
+    print "  \"system.logout\": {\"icon\": \"󰍃\", \"label\": \"Logout\", \"action\": \"soundswap logout\"},"
+    print "  \"system.reboot\": {\"icon\": \"󰜉\", \"label\": \"Reboot\", \"action\": \"soundswap reboot\"},"
     print "  \"system.shutdown\": {\"icon\": \"󰐥\", \"label\": \"Shutdown\", \"action\": \"soundswap poweroff\"},"
     print e
     added=1

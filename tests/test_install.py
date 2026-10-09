@@ -226,7 +226,7 @@ class InstallTests(unittest.TestCase):
         unit = (self.config / 'systemd/user/soundswap-shutdown.service').read_text()
         self.assertIn('PartOf=graphical-session.target', unit)
         self.assertIn('WantedBy=graphical-session.target', unit)
-        self.assertIn('After=pipewire.service pipewire-pulse.service wireplumber.service', unit)
+        self.assertIn('After=pipewire.service pipewire-pulse.service wireplumber.service pulseaudio.service', unit)
         self.assertIn('soundswap shutdown-stop', unit)
         self.assertIn('TimeoutStopSec=25', unit)
         self.assertIn(str(self.config), unit)
@@ -243,10 +243,27 @@ class InstallTests(unittest.TestCase):
         installed = menu.read_text()
         self.assertIn('"personal.notes": {"action": "open-notes"}', installed)
         self.assertIn('"action": "soundswap poweroff"', installed)
+        self.assertIn('"system.logout": {"icon": "󰍃", "label": "Logout", "action": "soundswap logout"}', installed)
+        self.assertIn('"system.reboot": {"icon": "󰜉", "label": "Reboot", "action": "soundswap reboot"}', installed)
         self.assertIn('"label": "Shutdown"', installed)
         self.assertIn('"icon": "󰐥"', installed)
         result = self.run_script('uninstall.sh')
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(menu.read_text(), original)
+
+    def test_existing_user_reboot_action_is_preserved_when_upgrading_menu_block(self):
+        menu = self.config / 'omarchy/extensions/omarchy-menu.jsonc'
+        menu.parent.mkdir(parents=True)
+        original = ('{\n'
+                    '  // soundswap shutdown >>>\n'
+                    '  "system.shutdown": {"icon": "󰐥", "label": "Shutdown", "action": "soundswap poweroff"},\n'
+                    '  // <<< soundswap shutdown\n'
+                    '  "system.reboot": {"action": "my-reboot"}\n'
+                    '}\n')
+        menu.write_text(original)
+        result = self.run_script('install.sh')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('already customizes system.reboot', result.stderr)
         self.assertEqual(menu.read_text(), original)
 
     def test_duplicate_shutdown_menu_markers_abort_without_losing_user_rows(self):

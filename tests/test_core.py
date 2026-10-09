@@ -3,6 +3,7 @@ import concurrent.futures
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import time
@@ -41,7 +42,8 @@ class CoreTests(unittest.TestCase):
     def cli(self, *args):
         return self.run_cmd('soundswap', *args)
 
-    def doctor_setup(self, plugin_enabled=True, bar_registered=True, loader=True):
+    def doctor_setup(self, plugin_enabled=True, bar_registered=True, loader=True,
+                     missing_lifecycle=()):
         omarchy = self.conf.parent / 'omarchy'
         plugin = omarchy / 'plugins/soundswap.sounds'
         plugin.mkdir(parents=True)
@@ -52,6 +54,9 @@ class CoreTests(unittest.TestCase):
         (omarchy / 'shell.json').write_text('{"bar":{"layout":{"right":[' + layout_id + ']}}}\n')
         listing = '[{"id":"soundswap.sounds","kinds":["bar-widget"],"enabled":' + str(plugin_enabled).lower() + '}]'
         self.fake('omarchy-shell', f'printf \'%s\\n\' \'{listing}\'')
+        for lifecycle in ('shutdown', 'reboot', 'logout'):
+            if lifecycle not in missing_lifecycle:
+                self.fake(f'omarchy-system-{lifecycle}', 'exit 0')
         hypr = self.conf.parent / 'hypr'
         hypr.mkdir()
         module = hypr / 'soundswap.lua'
@@ -106,6 +111,46 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(self.cli('poweroff').returncode, 7)
         self.assertEqual(self.cli('shutdown-stop').returncode, 0)
         self.assertEqual((self.home / 'order').read_text().splitlines(), ['played', 'played'])
+
+    def test_reboot_and_logout_play_before_original_omarchy_actions(self):
+        (self.conf / 'sounds/shutdown.wav').touch()
+        self.backend('printf "played\\n" >> "$HOME/order"')
+        for action, command in (('reboot', 'omarchy-system-reboot'),
+                                ('logout', 'omarchy-system-logout')):
+            stock = self.bin / command
+            stock.write_text(f'#!/bin/bash\nprintf "{action}\\n" >> "$HOME/order"\n')
+            stock.chmod(0o755)
+            result = self.cli(action)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.home / 'order').read_text().splitlines(),
+                         ['played', 'reboot', 'played', 'logout'])
+
+    def test_reboot_and_logout_continue_when_audio_fails(self):
+        (self.conf / 'sounds/shutdown.wav').touch()
+        self.backend('exit 7')
+        for action, command in (('reboot', 'omarchy-system-reboot'),
+                                ('logout', 'omarchy-system-logout')):
+            stock = self.bin / command
+            stock.write_text(f'#!/bin/bash\nprintf "{action}\\n" >> "$HOME/order"\n')
+            stock.chmod(0o755)
+            result = self.cli(action)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.home / 'order').read_text().splitlines(), ['reboot', 'logout'])
+
+    def test_reboot_and_logout_preserve_stop_fallback_and_suppress_duplicates(self):
+        (self.conf / 'sounds/shutdown.wav').touch()
+        self.backend('printf "played\\n" >> "$HOME/order"')
+        for action, command in (('reboot', 'omarchy-system-reboot'),
+                                ('logout', 'omarchy-system-logout')):
+            stock = self.bin / command
+            stock.write_text(f'#!/bin/bash\nprintf "{action}\\n" >> "$HOME/order"\n')
+            stock.chmod(0o755)
+            result = self.cli(action)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            result = self.cli('shutdown-stop')
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.home / 'order').read_text().splitlines(),
+                         ['played', 'reboot', 'played', 'logout'])
 
     def test_poweroff_waits_for_overlapping_shutdown_playback(self):
         (self.conf / 'sounds/shutdown.wav').touch()
@@ -247,6 +292,24 @@ class CoreTests(unittest.TestCase):
         self.assertIn('PASS: Omarchy plugin registry reports the SoundSwap widget enabled', result.stdout)
         self.assertIn('PASS: user service enabled: soundswap.service', result.stdout)
         self.assertIn('WARN: no PipeWire or PulseAudio user service is active', result.stdout)
+
+    def test_doctor_warns_when_reboot_or_logout_helpers_are_missing(self):
+        self.doctor_setup(missing_lifecycle=('reboot', 'logout'))
+        utility_bin = self.home / 'doctor-utilities'
+        utility_bin.mkdir()
+        for tool in ('bash', 'flock', 'setsid', 'timeout', 'journalctl', 'dbus-monitor',
+                     'gdbus', 'udevadm', 'awk', 'cp', 'mv', 'mkdir', 'mktemp', 'stat',
+                     'date', 'sleep', 'ps', 'rm', 'tail', 'readlink', 'dirname', 'grep',
+                     'chmod', 'touch'):
+            target = shutil.which(tool)
+            if target:
+                (utility_bin / tool).symlink_to(target)
+        self.env['PATH'] = f'{self.bin}:{utility_bin}:{ROOT / "bin"}'
+        result = self.cli('doctor')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('WARN: omarchy-system-reboot is unavailable', result.stdout)
+        self.assertIn('WARN: omarchy-system-logout is unavailable', result.stdout)
+        self.assertIn('PASS: Omarchy lifecycle command is available: omarchy-system-shutdown', result.stdout)
 
     def test_doctor_reports_missing_plugin_and_user_service_without_changes(self):
         self.doctor_setup()

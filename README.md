@@ -137,8 +137,8 @@ installation. See
 | Non-consuming Hyprland binds (the key still does its job) | mouse clicks, volume keys, Super tap (release bind that only fires on a lone tap) |
 | `soundswap-daemon` (`soundswap.service`) | lock/unlock (omarchy-shell's lock log in the user journal), notifications and screenshots (session D-Bus; normal ones respect Do Not Disturb), USB (udev) and Bluetooth (BlueZ) devices, charger and critical battery (UPower) |
 | Omarchy hooks (`~/.config/omarchy/hooks/*.d/soundswap`) | battery-low, theme-set, post-update |
-| Omarchy Shutdown menu action | Plays `shutdown` to completion before Omarchy starts poweroff. |
-| `soundswap-shutdown.service` | Fallback `ExecStop` playback for other shutdown paths, reboot, and logout. Skips a duplicate after the menu action. |
+| Omarchy shutdown, reboot, and logout menu actions | Play `shutdown` to completion, with a 24-second bound, before invoking Omarchy's original action. |
+| `soundswap-shutdown.service` | Fallback `ExecStop` playback for lifecycle paths that bypass the menu. Skips a duplicate after menu playback and stops before PipeWire, WirePlumber, or PulseAudio. |
 
 Device sounds are skipped for 8 seconds after resuming from suspend and never
 repeat within a second, so reconnect bursts don't machine-gun. Everything calls
@@ -168,9 +168,9 @@ git diff --check
 
 These checks cover parsing, playback routing, watcher cleanup, UI state changes,
 fresh installs, BeepBoop upgrades, and safe install/uninstall behavior. The
-installer routes Omarchy's shutdown
-menu through synchronous pre-playback; the shutdown service is a fallback for
-other shutdown paths and is ordered to stop before PipeWire and WirePlumber.
+installer routes Omarchy's shutdown, reboot, and logout menu actions through
+synchronous pre-playback; the shutdown service remains a fallback for other
+lifecycle paths and is ordered to stop before the supported audio services.
 Automated checks and preview commands cannot prove audibility through every
 login, lock/unlock, reboot, logout, or shutdown path; those still need desktop
 lifecycle testing.
