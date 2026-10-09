@@ -34,6 +34,9 @@ automatically. Run `soundswap doctor` to check the installation and
 `soundswap status` to see settings and sound files. The widget can be opened
 from the bar. Toggle shutdown audio in the widget or with
 `soundswap enable shutdown` / `soundswap disable shutdown`.
+Updates preserve the existing config file's permissions. The installer and
+uninstaller reject `..` paths and symlinked destination directories; use
+ordinary directories for the XDG config, data, and state locations.
 
 ## Uninstall
 
@@ -41,6 +44,8 @@ From the checkout, run `./uninstall.sh`. This removes SoundSwap's hooks, widget,
 user services, and shutdown, reboot, and logout menu entries. It preserves
 settings and custom sound files. To remove the retained settings and working sound
 copies too, run `./uninstall.sh --purge`; a backup is created first.
+Before removing bundled original sounds, the uninstaller validates event names
+from its manifest so malformed entries cannot direct deletion elsewhere.
 
 ## Adding sounds
 
