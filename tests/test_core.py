@@ -63,6 +63,13 @@ class CoreTests(unittest.TestCase):
         module.write_text('')
         main = hypr / 'hyprland.lua'
         main.write_text('dofile((os.getenv("XDG_CONFIG_HOME") or (os.getenv("HOME") .. "/.config")) .. "/hypr/soundswap.lua")\n' if loader else '-- no SoundSwap loader\n')
+        menu = omarchy / 'extensions/omarchy-menu.jsonc'
+        menu.parent.mkdir(parents=True)
+        menu.write_text('{\n  // soundswap shutdown >>>\n'
+                        '  "system.logout": {"action": "soundswap logout"},\n'
+                        '  "system.reboot": {"action": "soundswap reboot"},\n'
+                        '  "system.shutdown": {"action": "soundswap poweroff"},\n'
+                        '  // <<< soundswap shutdown\n}\n')
         units = self.conf.parent / 'systemd/user'
         units.mkdir(parents=True)
         for unit in ('soundswap.service', 'soundswap-shutdown.service'):
@@ -357,6 +364,50 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(all(call.startswith('--user show-environment') or
                             call.startswith('--user is-enabled --quiet') or
                             call.startswith('--user is-active --quiet') for call in calls), calls)
+
+    def test_doctor_detects_missing_or_modified_lifecycle_menu_without_changes(self):
+        self.doctor_setup()
+        menu = self.conf.parent / 'omarchy/extensions/omarchy-menu.jsonc'
+        menu.parent.mkdir(parents=True, exist_ok=True)
+        menu.write_text('{\n  // soundswap shutdown >>>\n'
+                        '  "system.reboot": {"action": "other-reboot"},\n'
+                        '  "system.shutdown": {"action": "soundswap poweroff"},\n'
+                        '  // <<< soundswap shutdown\n}\n')
+        before = menu.read_bytes()
+        result = self.cli('doctor')
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('FAIL: reboot menu action is modified', result.stdout)
+        self.assertIn('soundswap reboot', result.stdout)
+        self.assertIn('FAIL: logout menu action is missing', result.stdout)
+        self.assertEqual(menu.read_bytes(), before)
+
+    def test_doctor_accepts_multiline_jsonc_lifecycle_actions_without_changes(self):
+        self.doctor_setup()
+        menu = self.conf.parent / 'omarchy/extensions/omarchy-menu.jsonc'
+        menu.write_text('{\n  // soundswap shutdown >>>\n'
+                        '  "system.logout": {\n    "action": "soundswap logout",\n    "label": "Logout"\n  },\n'
+                        '  "system.reboot": {\n    "action": "soundswap reboot"\n  },\n'
+                        '  "system.shutdown": {\n    "action": "soundswap poweroff"\n  },\n'
+                        '  // <<< soundswap shutdown\n}\n')
+        before = menu.read_bytes()
+        result = self.cli('doctor')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('PASS: shutdown menu action is configured: system.logout', result.stdout)
+        self.assertIn('PASS: shutdown menu action is configured: system.reboot', result.stdout)
+        self.assertIn('PASS: shutdown menu action is configured: system.shutdown', result.stdout)
+        self.assertEqual(menu.read_bytes(), before)
+
+    def test_doctor_does_not_match_action_from_neighboring_menu_entry(self):
+        self.doctor_setup()
+        menu = self.conf.parent / 'omarchy/extensions/omarchy-menu.jsonc'
+        menu.write_text('{\n  // soundswap shutdown >>>\n'
+                        '  "system.logout": {"action": "soundswap logout"},\n'
+                        '  "system.reboot": {}, "personal.other": {"action": "soundswap reboot"},\n'
+                        '  "system.shutdown": {"action": "soundswap poweroff"},\n'
+                        '  // <<< soundswap shutdown\n}\n')
+        result = self.cli('doctor')
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('FAIL: reboot menu action is modified', result.stdout)
 
     def test_status_shows_one_filename_for_present_sound(self):
         (self.conf / 'sounds/click.wav').touch()

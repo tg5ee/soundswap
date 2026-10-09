@@ -168,12 +168,36 @@ it, so adding an event there (plus whatever fires it) is all it takes.
 
 `soundswap doctor` reports PASS, WARN, or FAIL for runtime commands, audio,
 Omarchy lifecycle helpers, plugin files and registration, the Hyprland loader,
-and user services. It explains missing integrations and only reads system state;
-FAIL exits nonzero, while WARN flags a limitation without failing the check.
-It does not inspect the Omarchy menu override itself.
+and user services. Missing or modified lifecycle menu entries are reported with
+repair instructions. FAIL exits nonzero, while WARN flags a limitation without
+failing the check.
 
 `soundswap log on`, then `soundswap log` shows every trigger as it
 happens, whether or not a sound file exists for it.
+
+### Manual lifecycle verification
+
+Automated tests use fake lifecycle commands and never end your session. To
+verify the actual desktop path, first save your work and make sure you are ready
+for the selected action to happen. Open the Omarchy menu and test **one action
+at a time**:
+
+1. Select **Logout** and confirm the `shutdown` sound starts before the session
+   ends.
+2. After signing in again, select **Reboot** and confirm the sound starts before
+   the system restarts.
+3. After the system is back, select **Shutdown** and confirm the sound starts
+   before poweroff.
+
+For a non-destructive playback check, run `soundswap preview shutdown`; this
+checks audio playback but does not verify lifecycle ordering. A missing sound,
+the wrong action, or a transition that starts before the sound indicates a
+failure. Run `soundswap doctor` first: missing/modified menu entries identify
+the exact key and offer `./install.sh` as the repair. If the entries pass but
+playback fails, check `soundswap status`, `soundswap log on`, the user journal
+(`journalctl --user -u soundswap-shutdown.service`), and PipeWire status. The
+actual lifecycle checks are inherently disruptive and should only be done
+when you can safely end that session or power state.
 
 In Omarchy 4.0.4, `omarchy refresh shell` resets the bar layout and
 `omarchy refresh hyprland` replaces the main Lua config. If a reset removes

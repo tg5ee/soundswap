@@ -34,6 +34,7 @@ doctor() {
   local failed=0 tool player='' config_root=${XDG_CONFIG_HOME:-$HOME/.config}
   local plugin_dir="$config_root/omarchy/plugins/soundswap.sounds"
   local shell_config="$config_root/omarchy/shell.json"
+  local menu="$config_root/omarchy/extensions/omarchy-menu.jsonc"
   local hypr_dir="$config_root/hypr" main="$config_root/hypr/hyprland.lua"
   local unit_dir="$config_root/systemd/user" unit plugins
   local required_tools=(flock setsid timeout systemctl journalctl dbus-monitor gdbus udevadm awk cp mv mkdir mktemp stat date sleep ps rm tail readlink dirname grep chmod touch)
@@ -119,6 +120,59 @@ doctor() {
   else
     report FAIL "Hyprland loader or module is missing. Restore the SoundSwap loader in $main or reinstall with ./install.sh"
   fi
+
+  local menu_begin='  // soundswap shutdown >>>' menu_end='  // <<< soundswap shutdown'
+  local lifecycle key expected result
+  for lifecycle in logout reboot shutdown; do
+    case $lifecycle in
+      logout) key=system.logout; expected='soundswap logout' ;;
+      reboot) key=system.reboot; expected='soundswap reboot' ;;
+      shutdown) key=system.shutdown; expected='soundswap poweroff' ;;
+    esac
+    result=missing
+    if [[ -r $menu ]]; then
+      result=$(awk -v b="$menu_begin" -v e="$menu_end" -v k="\"$key\"" -v a="\"$expected\"" '
+        $0 == b { inside=1; blocks++; next }
+        $0 == e { inside=0; next }
+        inside {
+          segment=$0
+          if (!entry) {
+            position=index(segment,k)
+            if (!position) next
+            segment=substr(segment,position+length(k))
+            if (segment !~ /^[[:space:]]*:/) next
+            found=1
+            entry=1
+            entry_correct=0
+          }
+          closing=index(segment,"}")
+          if (closing) segment=substr(segment,1,closing-1)
+          if (segment ~ /"action"[[:space:]]*:[[:space:]]*"[^"]*"/) {
+            action=segment
+            sub(/^.*"action"[[:space:]]*:[[:space:]]*"/, "", action)
+            sub(/".*$/, "", action)
+            if (action == substr(a,2,length(a)-2)) entry_correct=1
+          }
+          if (closing) {
+            if (!entry_correct) bad=1
+            entry=0
+          }
+        }
+        END {
+          if (blocks != 1 || inside || !found) print "missing"
+          else if (bad || entry) print "modified"
+          else print "ok"
+        }
+      ' "$menu")
+    fi
+    if [[ $result == ok ]]; then
+      report PASS "shutdown menu action is configured: $key"
+    elif [[ $result == modified ]]; then
+      report FAIL "$lifecycle menu action is modified; restore \"$key\" to action \"$expected\" in $menu, or rerun ./install.sh"
+    else
+      report FAIL "$lifecycle menu action is missing; rerun ./install.sh to add \"$key\" with action \"$expected\" in $menu"
+    fi
+  done
 
   if command -v timeout >/dev/null 2>&1 && command -v systemctl >/dev/null 2>&1 &&
       timeout 5 systemctl --user show-environment >/dev/null 2>&1; then

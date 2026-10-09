@@ -485,6 +485,46 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Widget enabling failed', result.stderr)
         self.assertIn('soundswap.sounds', (self.config / 'omarchy/shell.json').read_text())
+        custom = self.config / 'soundswap/sounds/custom.wav'
+        custom.parent.mkdir(parents=True, exist_ok=True)
+        custom.write_bytes(b'user sound')
+        del self.env['OMARCHY_ENABLE_FAIL']
+        result = self.run_script('install.sh')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(custom.read_bytes(), b'user sound')
+
+    def test_systemd_enable_and_start_failures_leave_user_files_safe_and_retryable(self):
+        for operation in ('enable', 'start'):
+            with self.subTest(operation=operation):
+                # Each iteration gets an isolated home and a one-shot systemctl failure.
+                self.setUp()
+                systemctl = self.tools / 'systemctl'
+                systemctl.write_text(
+                    '#!/bin/bash\n'
+                    'printf "%s %s\\n" "${0##*/}" "$*" >> "$HOME/calls"\n'
+                    f'if [[ "$*" == "--user {operation} soundswap.service soundswap-shutdown.service" || '
+                    f'"$*" == "--user start soundswap-shutdown.service" ]]; then\n'
+                    '  marker="$HOME/systemctl-failed-once"\n'
+                    '  if [[ ! -e $marker ]]; then : > "$marker"; exit 9; fi\n'
+                    'fi\n')
+                systemctl.chmod(0o755)
+                conf = self.config / 'soundswap'
+                conf.mkdir(parents=True, exist_ok=True)
+                (conf / 'config').write_text('CLICK=0\n')
+                custom = conf / 'sounds/custom.wav'
+                custom.parent.mkdir(parents=True, exist_ok=True)
+                custom.write_bytes(b'keep')
+                original_main = self.main.read_bytes()
+                first = self.run_script('install.sh')
+                self.assertNotEqual(first.returncode, 0, first.stdout + first.stderr)
+                self.assertEqual(custom.read_bytes(), b'keep')
+                self.assertIn('CLICK=0', (conf / 'config').read_text())
+                self.assertTrue((self.home / '.local/bin/soundswap').is_file())
+                self.assertNotEqual(self.main.read_bytes(), original_main)
+                second = self.run_script('install.sh')
+                self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+                self.assertEqual(custom.read_bytes(), b'keep')
+                self.assertIn('CLICK=0', (conf / 'config').read_text())
 
     def test_uninstall_preserves_unrelated_files_and_data(self):
         result = self.run_script('install.sh')
