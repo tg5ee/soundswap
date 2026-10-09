@@ -11,8 +11,8 @@ notification, and Omarchy lifecycle actions.
 
 Run this from a terminal inside your Omarchy desktop session. The installer
 configures the Hyprland event hooks, bar widget, user services, Omarchy menu
-shutdown action, and bundled sounds. It needs no manual systemd or Omarchy
-configuration and does not use `sudo`.
+shutdown, reboot, and logout actions, and bundled sounds. It needs no manual
+systemd or Omarchy configuration and does not use `sudo`.
 
 ```bash
 git clone https://github.com/tg5ee/soundswap.git
@@ -20,11 +20,19 @@ cd soundswap
 ./install.sh
 ```
 
+Before changing installed files, the installer reports PASS, WARN, or FAIL for
+required commands and the desktop session. It checks the user service manager,
+audio playback commands (`pw-play`, `paplay`, or `mpv`), and active PipeWire or
+PulseAudio services. A missing required dependency stops installation with a
+repair hint; audio warnings allow installation to continue. It does not install
+packages or change system-wide configuration.
+
 The installer preserves existing settings and sound files and can be rerun to
 update. Existing BeepBoop and older Omarchy Sounds installations are migrated
-automatically. To check the result, run `soundswap status`; the widget can be opened
-from the bar. Toggle shutdown audio in the widget or with `soundswap enable
-shutdown` / `soundswap disable shutdown`.
+automatically. Run `soundswap doctor` to check the installation and
+`soundswap status` to see settings and sound files. The widget can be opened
+from the bar. Toggle shutdown audio in the widget or with
+`soundswap enable shutdown` / `soundswap disable shutdown`.
 
 ## Uninstall
 
@@ -106,6 +114,7 @@ no robot mascot or generic music-note decoration.
 
 ```bash
 soundswap status           # what's on, which files are present
+soundswap doctor           # read-only dependency and integration checks
 soundswap off | on | toggle
 soundswap disable click    # turn off one event
 soundswap volume 0.4
@@ -137,8 +146,8 @@ installation. See
 | Non-consuming Hyprland binds (the key still does its job) | mouse clicks, volume keys, Super tap (release bind that only fires on a lone tap) |
 | `soundswap-daemon` (`soundswap.service`) | lock/unlock (omarchy-shell's lock log in the user journal), notifications and screenshots (session D-Bus; normal ones respect Do Not Disturb), USB (udev) and Bluetooth (BlueZ) devices, charger and critical battery (UPower) |
 | Omarchy hooks (`~/.config/omarchy/hooks/*.d/soundswap`) | battery-low, theme-set, post-update |
-| Omarchy shutdown, reboot, and logout menu actions | Play `shutdown` to completion, with a 24-second bound, before invoking Omarchy's original action. |
-| `soundswap-shutdown.service` | Fallback `ExecStop` playback for lifecycle paths that bypass the menu. Skips a duplicate after menu playback and stops before PipeWire, WirePlumber, or PulseAudio. |
+| Omarchy shutdown, reboot, and logout menu actions | Wait for `shutdown` playback (up to 24 seconds plus a one-second kill grace), then invoke Omarchy's original action even if audio fails. |
+| `soundswap-shutdown.service` | Fallback `ExecStop` playback for lifecycle paths that bypass the menu. Skips a duplicate after successful menu playback and is ordered to stop before PipeWire, WirePlumber, or PulseAudio. |
 
 Device sounds are skipped for 8 seconds after resuming from suspend and never
 repeat within a second, so reconnect bursts don't machine-gun. Everything calls
@@ -148,6 +157,11 @@ The event list lives in `share/events.tsv`; the CLI and the bar panel both read
 it, so adding an event there (plus whatever fires it) is all it takes.
 
 ### Troubleshooting
+
+`soundswap doctor` reports PASS, WARN, or FAIL for runtime commands, audio,
+Omarchy lifecycle helpers, plugin files and registration, the Hyprland loader,
+and user services. It explains missing integrations and only reads system state;
+FAIL exits nonzero, while WARN flags a limitation without failing the check.
 
 `soundswap log on`, then `soundswap log` shows every trigger as it
 happens, whether or not a sound file exists for it.
