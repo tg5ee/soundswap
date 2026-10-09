@@ -126,9 +126,27 @@ class InstallTests(unittest.TestCase):
         self.env['BASH_ENV'] = str(startup)
         result = self.run_script('install.sh')
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn('FAIL: required command missing: dbus-monitor', result.stderr)
+        self.assertIn('pacman -F dbus-monitor', result.stderr)
         self.assertIn('dbus-monitor', result.stderr)
         self.assertEqual(self.calls(), '')
         self.assertFalse((self.home / '.local/bin/soundswap').exists())
+
+    def test_missing_optional_runtime_dependencies_warn_and_install_continues(self):
+        startup = self.home / 'hide-optional-deps.bash'
+        startup.write_text('command() {\n'
+                           '  if [[ ${1:-} == -v ]]; then\n'
+                           '    case ${2:-} in pw-play|paplay|mpv|omarchy-shell) return 1;; esac\n'
+                           '  fi\n'
+                           '  builtin command "$@"\n'
+                           '}\n')
+        self.env['BASH_ENV'] = str(startup)
+        result = self.run_script('install.sh')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('WARN: no audio playback command found', result.stdout)
+        self.assertIn('WARN: omarchy-shell is unavailable', result.stdout)
+        self.assertIn('Fix:', result.stdout)
+        self.assertTrue((self.home / '.local/bin/soundswap').is_file())
 
     def test_invalid_staged_config_changes_no_targets_or_services(self):
         self.env['VERIFY_FAIL'] = '1'

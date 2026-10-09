@@ -41,6 +41,39 @@ say() { printf '==> %s\n' "$*"; }
 warn() { printf 'Warning: %s\n' "$*" >&2; }
 fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 
+required_tools=(bash flock setsid timeout luac Hyprland systemctl install cp mv mktemp awk grep sed cmp date tail mkdir find sort uniq tr rm ps journalctl dbus-monitor gdbus udevadm)
+missing_tools=()
+for tool in "${required_tools[@]}"; do
+  command -v "$tool" >/dev/null 2>&1 || missing_tools+=("$tool")
+done
+if ((${#missing_tools[@]})); then
+  for tool in "${missing_tools[@]}"; do
+    printf 'FAIL: required command missing: %s\n  Fix: run pacman -F %s, install its package, then rerun ./install.sh.\n' "$tool" "$tool" >&2
+  done
+  exit 1
+fi
+say 'PASS: required installer and runtime commands are available'
+
+if [[ -n ${XDG_RUNTIME_DIR:-} && -d $XDG_RUNTIME_DIR && -w $XDG_RUNTIME_DIR ]]; then
+  say 'PASS: writable desktop runtime directory is available'
+else
+  printf 'FAIL: writable XDG_RUNTIME_DIR is unavailable.\n  Fix: run ./install.sh from an active Omarchy desktop session.\n' >&2
+  exit 1
+fi
+if command -v omarchy-shell >/dev/null 2>&1; then
+  say 'PASS: omarchy-shell is available'
+else
+  printf 'WARN: omarchy-shell is unavailable; notification DND detection and panel management will be limited.\n  Fix: run from Omarchy with omarchy-shell on PATH.\n'
+fi
+audio_backend=
+for tool in pw-play paplay mpv; do
+  if command -v "$tool" >/dev/null 2>&1; then audio_backend=$tool; break; fi
+done
+if [[ -n $audio_backend ]]; then
+  say "PASS: audio playback command available ($audio_backend)"
+else
+  printf 'WARN: no audio playback command found (pw-play, paplay, or mpv); SoundSwap cannot play sounds.\n  Fix: install an audio player such as PipeWire (pw-play), PulseAudio (paplay), or mpv, then rerun ./install.sh.\n'
+fi
 # Ambiguous or incomplete fences must never be interpreted as a removable range.
 [[ -f $MAIN && ! -L $MAIN ]] || fail "Expected a regular Lua config at $MAIN"
 
@@ -58,9 +91,6 @@ marker_count "$MAIN" "$BEGIN" "$END" >/dev/null || fail 'Malformed soundswap mar
 marker_count "$MAIN" "$OLD_BEGIN" "$OLD_END" >/dev/null || fail 'Malformed legacy beepboop markers; repair the paired block first.'
 marker_count "$MAIN" "$OLDER_BEGIN" "$OLDER_END" >/dev/null || fail 'Malformed legacy omarchy-sounds markers; repair the paired block first.'
 
-for tool in bash flock setsid timeout luac Hyprland systemctl install cp mv mktemp awk grep sed cmp date tail mkdir find sort uniq tr rm ps journalctl dbus-monitor gdbus udevadm; do
-  command -v "$tool" >/dev/null || fail "Missing required command: $tool"
-done
 for root in "$HOME" "$CONFIG_ROOT" "$DATA_ROOT" "$STATE_ROOT"; do
   [[ $root = /* && $root != *$'\n'* && $root != *$'\r'* && $root != *$'\t'* ]] || fail 'Installation paths must be absolute and contain no control characters.'
 done
@@ -71,7 +101,6 @@ if [[ -f $MENU ]]; then
   marker_count "$MENU" "$OLDER_MENU_BEGIN" "$OLDER_MENU_END" >/dev/null || fail 'Malformed omarchy-sounds shutdown menu markers; preserve the menu and repair the marker block first.'
 fi
 
-[[ -n ${XDG_RUNTIME_DIR:-} && -d $XDG_RUNTIME_DIR && -w $XDG_RUNTIME_DIR ]] || fail 'Run from the desktop session with a writable XDG_RUNTIME_DIR.'
 for file in bin/soundswap bin/soundswap-play bin/soundswap-daemon share/common.sh share/events.tsv config.default hypr/soundswap.lua plugin/manifest.json plugin/Panel.qml plugin/soundswap.svg sounds/README.md; do
   [[ -f $SRC/$file && -r $SRC/$file ]] || fail "Missing source file: $file"
 done
@@ -133,7 +162,21 @@ cp "$SRC/hypr/soundswap.lua" "$stage/module.lua"
 awk -v loader="$loader" '{ if ($0 == loader) print "dofile(os.getenv(\"SOUNDSWAP_STAGED_MODULE\"))"; else print }' "$stage/main.lua" > "$stage/verify.lua"
 luac -p "$stage/main.lua" "$stage/module.lua"
 SOUNDSWAP_STAGED_MODULE="$stage/module.lua" timeout 15 Hyprland --verify-config --config "$stage/verify.lua" || fail 'Hyprland rejected the staged configuration; installation was not changed.'
-timeout 5 systemctl --user show-environment >/dev/null || fail 'Cannot reach the user service manager; run from your desktop terminal.'
+if timeout 5 systemctl --user show-environment >/dev/null 2>&1; then
+  say 'PASS: user systemd service manager is reachable'
+else
+  printf 'FAIL: user systemd service manager is unavailable.\n  Fix: log into the Omarchy desktop session and rerun ./install.sh from its terminal.\n' >&2
+  exit 1
+fi
+active_audio_services=()
+for unit in pipewire.service pipewire-pulse.service wireplumber.service pulseaudio.service; do
+  if timeout 5 systemctl --user is-active --quiet "$unit"; then active_audio_services+=("$unit"); fi
+done
+if ((${#active_audio_services[@]})); then
+  say "PASS: active user audio service(s): ${active_audio_services[*]}"
+else
+  printf 'WARN: no PipeWire or PulseAudio user service is active.\n  Fix: check with systemctl --user status pipewire pipewire-pulse wireplumber; start the audio stack if needed.\n'
+fi
 
 # -----------------------------------------------------------------------------
 # Legacy migration: move settings/data/state if the new locations do not exist,
@@ -327,5 +370,4 @@ if command -v omarchy-shell >/dev/null && timeout 5 omarchy-shell shell listPlug
 else
   warn "Enable the widget from your desktop later: omarchy plugin enable $PLUGIN_ID"
 fi
-command -v pw-play >/dev/null || command -v paplay >/dev/null || command -v mpv >/dev/null || warn 'No audio player found: install pw-play, paplay, or mpv.'
 say "Done. Settings and sounds preserved in $CONF; inspect with soundswap status."
