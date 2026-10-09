@@ -41,6 +41,34 @@ class CoreTests(unittest.TestCase):
     def cli(self, *args):
         return self.run_cmd('soundswap', *args)
 
+    def doctor_setup(self, plugin_enabled=True, bar_registered=True, loader=True):
+        omarchy = self.conf.parent / 'omarchy'
+        plugin = omarchy / 'plugins/soundswap.sounds'
+        plugin.mkdir(parents=True)
+        (plugin / 'manifest.json').write_text((ROOT / 'plugin/manifest.json').read_text())
+        (plugin / 'Panel.qml').write_text('')
+        (plugin / 'soundswap.svg').write_text('')
+        layout_id = '{"id": "soundswap.sounds"}' if bar_registered else '{"id": "omarchy.tray"}'
+        (omarchy / 'shell.json').write_text('{"bar":{"layout":{"right":[' + layout_id + ']}}}\n')
+        listing = '[{"id":"soundswap.sounds","kinds":["bar-widget"],"enabled":' + str(plugin_enabled).lower() + '}]'
+        self.fake('omarchy-shell', f'printf \'%s\\n\' \'{listing}\'')
+        hypr = self.conf.parent / 'hypr'
+        hypr.mkdir()
+        module = hypr / 'soundswap.lua'
+        module.write_text('')
+        main = hypr / 'hyprland.lua'
+        main.write_text('dofile((os.getenv("XDG_CONFIG_HOME") or (os.getenv("HOME") .. "/.config")) .. "/hypr/soundswap.lua")\n' if loader else '-- no SoundSwap loader\n')
+        units = self.conf.parent / 'systemd/user'
+        units.mkdir(parents=True)
+        for unit in ('soundswap.service', 'soundswap-shutdown.service'):
+            (units / unit).write_text('')
+        self.fake('systemctl', 'printf "%s\\n" "$*" >> "$HOME/systemctl.calls"\ncase "$*" in "--user show-environment"|"--user is-enabled --quiet soundswap.service"|"--user is-enabled --quiet soundswap-shutdown.service") exit 0;; esac\nexit 1')
+
+    def fake(self, name, body):
+        script = self.bin / name
+        script.write_text('#!/bin/bash\n' + body + '\n')
+        script.chmod(0o755)
+
     def test_poweroff_plays_before_stock_command_and_skips_stop_duplicate(self):
         (self.conf / 'sounds/shutdown.wav').touch()
         self.backend('printf "played\\n" >> "$HOME/order"')
@@ -202,6 +230,41 @@ class CoreTests(unittest.TestCase):
             ['timeout', '1', 'bash', str(ROOT / 'bin/soundswap'), 'log', 'banana'],
             env=self.env, text=True, capture_output=True, timeout=3)
         self.assertEqual(bad_log.returncode, 2, bad_log.stderr)
+
+    def test_doctor_reports_missing_and_disabled_integrations(self):
+        self.doctor_setup(plugin_enabled=False, bar_registered=False, loader=False)
+        result = self.cli('doctor')
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('FAIL: bar widget is not registered in', result.stdout)
+        self.assertIn('FAIL: bar widget is disabled', result.stdout)
+        self.assertIn('FAIL: Hyprland loader', result.stdout)
+        self.assertIn('omarchy plugin enable soundswap.sounds', result.stdout)
+
+    def test_doctor_passes_with_installed_integrations(self):
+        self.doctor_setup()
+        result = self.cli('doctor')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('PASS: Omarchy plugin registry reports the SoundSwap widget enabled', result.stdout)
+        self.assertIn('PASS: user service enabled: soundswap.service', result.stdout)
+        self.assertIn('WARN: no PipeWire or PulseAudio user service is active', result.stdout)
+
+    def test_doctor_reports_missing_plugin_and_user_service_without_changes(self):
+        self.doctor_setup()
+        plugin = self.conf.parent / 'omarchy/plugins/soundswap.sounds'
+        (plugin / 'Panel.qml').unlink()
+        unit = self.conf.parent / 'systemd/user/soundswap.service'
+        unit.unlink()
+        before = {p: p.read_bytes() for p in self.conf.parent.rglob('*') if p.is_file()}
+        result = self.cli('doctor')
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn('FAIL: plugin file missing: Panel.qml', result.stdout)
+        self.assertIn('FAIL: user service file missing: soundswap.service', result.stdout)
+        after = {p: p.read_bytes() for p in self.conf.parent.rglob('*') if p.is_file()}
+        self.assertEqual(after, before)
+        calls = (self.home / 'systemctl.calls').read_text().splitlines()
+        self.assertTrue(all(call.startswith('--user show-environment') or
+                            call.startswith('--user is-enabled --quiet') or
+                            call.startswith('--user is-active --quiet') for call in calls), calls)
 
     def test_status_shows_one_filename_for_present_sound(self):
         (self.conf / 'sounds/click.wav').touch()

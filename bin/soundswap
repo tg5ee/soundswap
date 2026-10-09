@@ -26,8 +26,132 @@ Usage: soundswap <command>
   dir                  Print the sounds folder
   log [on|off]         Record every trigger; with no argument, watch the log
   json                 Print settings as JSON (used by the bar panel)
+  doctor               Check SoundSwap runtime dependencies and integrations
 USAGE
 }
+
+doctor() {
+  local failed=0 tool player= config_root=${XDG_CONFIG_HOME:-$HOME/.config}
+  local plugin_dir="$config_root/omarchy/plugins/soundswap.sounds"
+  local shell_config="$config_root/omarchy/shell.json"
+  local hypr_dir="$config_root/hypr" main="$config_root/hypr/hyprland.lua"
+  local unit_dir="$config_root/systemd/user" unit plugins
+  local required_tools=(flock setsid timeout systemctl journalctl dbus-monitor gdbus udevadm awk cp mv mkdir mktemp stat date sleep ps rm tail readlink dirname grep chmod touch)
+  local -a missing_tools=()
+
+  report() {
+    local level=$1 message=$2
+    printf '%s: %s\n' "$level" "$message"
+    if [[ $level == FAIL ]]; then failed=1; fi
+    return 0
+  }
+
+  for tool in "${required_tools[@]}"; do
+    command -v "$tool" >/dev/null 2>&1 || missing_tools+=("$tool")
+  done
+  if ((${#missing_tools[@]})); then
+    for tool in "${missing_tools[@]}"; do
+      report FAIL "required command missing: $tool. Find its package with: pacman -F $tool"
+    done
+  else
+    report PASS 'required runtime commands are available'
+  fi
+  for tool in pw-play paplay mpv; do
+    if command -v "$tool" >/dev/null 2>&1; then player=$tool; break; fi
+  done
+  if [[ -n $player ]]; then
+    report PASS "audio playback command available: $player"
+  else
+    report WARN 'no audio player found (pw-play, paplay, or mpv); install PipeWire, PulseAudio, or mpv to play sounds'
+  fi
+  if command -v omarchy-system-shutdown >/dev/null 2>&1; then
+    report PASS 'Omarchy shutdown command is available'
+  else
+    report WARN 'omarchy-system-shutdown is unavailable; the SoundSwap shutdown menu action will not work'
+  fi
+  if [[ -n ${XDG_RUNTIME_DIR:-} && -d $XDG_RUNTIME_DIR && -w $XDG_RUNTIME_DIR ]]; then
+    report PASS 'writable desktop runtime directory is available'
+  else
+    report FAIL 'writable XDG_RUNTIME_DIR is unavailable. Run from an active Omarchy desktop session'
+  fi
+
+  for tool in manifest.json Panel.qml soundswap.svg; do
+    if [[ -f $plugin_dir/$tool && -r $plugin_dir/$tool ]]; then
+      report PASS "plugin file available: $tool"
+    else
+      report FAIL "plugin file missing: $tool. Reinstall SoundSwap with ./install.sh"
+    fi
+  done
+  if [[ -r $plugin_dir/manifest.json ]] &&
+      grep -Fq '"id": "soundswap.sounds"' "$plugin_dir/manifest.json" &&
+      grep -Fq '"bar-widget"' "$plugin_dir/manifest.json" &&
+      grep -Fq '"barWidget": "Panel.qml"' "$plugin_dir/manifest.json"; then
+    report PASS 'plugin manifest identifies the SoundSwap bar widget'
+  else
+    report FAIL "plugin manifest is invalid or incomplete: $plugin_dir/manifest.json. Reinstall SoundSwap with ./install.sh"
+  fi
+  if [[ -r $shell_config ]] && grep -Eq '"id"[[:space:]]*:[[:space:]]*"soundswap.sounds"' "$shell_config"; then
+    report PASS 'bar layout registers soundswap.sounds'
+  else
+    report FAIL "bar widget is not registered in $shell_config. Enable it with: omarchy plugin enable soundswap.sounds"
+  fi
+  if command -v omarchy-shell >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then
+    if plugins=$(timeout 5 omarchy-shell shell listPlugins 2>/dev/null); then
+      if grep -Eq '"id"[[:space:]]*:[[:space:]]*"soundswap.sounds"[^}]*"enabled"[[:space:]]*:[[:space:]]*true' <<< "$plugins"; then
+        report PASS 'Omarchy plugin registry reports the SoundSwap widget enabled'
+      elif grep -Eq '"id"[[:space:]]*:[[:space:]]*"soundswap.sounds"' <<< "$plugins"; then
+        report FAIL 'bar widget is disabled in the Omarchy plugin registry. Enable it with: omarchy plugin enable soundswap.sounds'
+      else
+        report FAIL 'SoundSwap is missing from the Omarchy plugin registry. Reinstall with ./install.sh, then enable soundswap.sounds'
+      fi
+    else
+      report WARN 'could not query the Omarchy plugin registry. Run soundswap doctor from an active Omarchy session'
+    fi
+  else
+    report WARN 'omarchy-shell is unavailable; cannot confirm plugin registration state. Run from Omarchy with omarchy-shell on PATH'
+  fi
+
+  if [[ -r $main ]] && grep -Fq '"/hypr/soundswap.lua")' "$main" && [[ -r $hypr_dir/soundswap.lua ]]; then
+    report PASS 'Hyprland config loads the SoundSwap module'
+  else
+    report FAIL "Hyprland loader or module is missing. Restore the SoundSwap loader in $main or reinstall with ./install.sh"
+  fi
+
+  if command -v timeout >/dev/null 2>&1 && command -v systemctl >/dev/null 2>&1 &&
+      timeout 5 systemctl --user show-environment >/dev/null 2>&1; then
+    report PASS 'user systemd service manager is reachable'
+  else
+    report FAIL 'user systemd service manager is unavailable. Run soundswap doctor from an active Omarchy desktop session'
+  fi
+  for unit in soundswap.service soundswap-shutdown.service; do
+    if [[ ! -r $unit_dir/$unit ]]; then
+      report FAIL "user service file missing: $unit. Reinstall SoundSwap with ./install.sh"
+    elif command -v timeout >/dev/null 2>&1 && command -v systemctl >/dev/null 2>&1 &&
+        timeout 5 systemctl --user is-enabled --quiet "$unit"; then
+      report PASS "user service enabled: $unit"
+    else
+      report FAIL "user service is not enabled: $unit. Enable it with: systemctl --user enable $unit"
+    fi
+  done
+
+  local -a active_audio_services=()
+  if command -v timeout >/dev/null 2>&1 && command -v systemctl >/dev/null 2>&1; then
+    for unit in pipewire.service pipewire-pulse.service wireplumber.service pulseaudio.service; do
+      timeout 5 systemctl --user is-active --quiet "$unit" && active_audio_services+=("$unit")
+    done
+  fi
+  if ((${#active_audio_services[@]})); then
+    report PASS "active user audio service(s): ${active_audio_services[*]}"
+  else
+    report WARN 'no PipeWire or PulseAudio user service is active; check with: systemctl --user status pipewire pipewire-pulse wireplumber'
+  fi
+  return "$failed"
+}
+
+if [[ ${1:-} == doctor && $# == 1 ]]; then
+  doctor
+  exit $?
+fi
 
 read_config
 
