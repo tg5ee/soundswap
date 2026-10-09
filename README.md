@@ -91,6 +91,8 @@ with the same panel kit as Omarchy's Audio and Bluetooth panels.
 - **Right click**: turn all sounds on/off
 - **Middle click**: open the sounds folder
 
+![SoundSwap bar widget showing the settings panel](docs/soundswap-panel.png)
+
 Keyboard, with the panel open: arrows move, Enter toggles, ←/→ change volume,
 `p` previews the selected sound, `s` turns everything on/off, `o` opens the folder.
 
