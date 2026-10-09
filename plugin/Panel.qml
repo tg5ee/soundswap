@@ -455,13 +455,14 @@ Panel {
 
               Text {
                 textFormat: Text.PlainText
-                text: root.packName
+                text: "SoundSwap"
+                horizontalAlignment: Text.AlignHCenter
                 color: root.fg
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.body
                 font.bold: true
                 elide: Text.ElideRight
-                width: parent.width
+                width: hero.width
               }
 
               Text {

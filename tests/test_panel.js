@@ -65,7 +65,10 @@ check('directory changes include renames and no periodic JSON polling', () => {
 });
 check('panel carries the SoundSwap identity and default pack name', () => {
   assert.match(source, /moduleName: "soundswap\.sounds"/);
-  assert.match(source, /SoundSwap Original/);
+  assert.match(source, /property string packName: "SoundSwap Original"/);
+  assert.match(source, /packName = data\.pack \|\| "SoundSwap Original"/);
+  assert.match(source, /id: heroLabels\s+anchors\.left: parent\.left\s+anchors\.right: parent\.right\s+anchors\.rightMargin: powerSwitch\.visible \? powerSwitch\.width \+ Style\.space\(8\) : 0/);
+  assert.match(source, /text: "SoundSwap"\s+horizontalAlignment: Text\.AlignHCenter[\s\S]*?width: hero\.width/);
   assert.doesNotMatch(source, /BeepBoop|beepboop/);
 });
 process.exitCode = failures ? 1 : 0;
