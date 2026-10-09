@@ -6,6 +6,7 @@ SoundSwap is a lightweight, customizable system sound manager for Omarchy Linux.
 It includes the curated **SoundSwap Original** collection and lets you replace
 any event sound with your own file. Its 27 events cover desktop, device, power,
 notification, and Omarchy lifecycle actions.
+The integration paths below were checked against Omarchy 4.0.4.
 
 ## Install
 
@@ -37,8 +38,8 @@ from the bar. Toggle shutdown audio in the widget or with
 ## Uninstall
 
 From the checkout, run `./uninstall.sh`. This removes SoundSwap's hooks, widget,
-user services, and shutdown menu integration while preserving settings and
-custom sound files. To remove the retained SoundSwap settings and working sound
+user services, and shutdown, reboot, and logout menu entries. It preserves
+settings and custom sound files. To remove the retained settings and working sound
 copies too, run `./uninstall.sh --purge`; a backup is created first.
 
 ## Adding sounds
@@ -115,7 +116,9 @@ no robot mascot or generic music-note decoration.
 ```bash
 soundswap status           # what's on, which files are present
 soundswap doctor           # read-only dependency and integration checks
+soundswap dir              # print the working sounds folder
 soundswap off | on | toggle
+soundswap enable click     # turn on one event
 soundswap disable click    # turn off one event
 soundswap volume 0.4
 soundswap event-volume click 0.5  # gain multiplied by master volume
@@ -146,7 +149,7 @@ installation. See
 | Non-consuming Hyprland binds (the key still does its job) | mouse clicks, volume keys, Super tap (release bind that only fires on a lone tap) |
 | `soundswap-daemon` (`soundswap.service`) | lock/unlock (omarchy-shell's lock log in the user journal), notifications and screenshots (session D-Bus; normal ones respect Do Not Disturb), USB (udev) and Bluetooth (BlueZ) devices, charger and critical battery (UPower) |
 | Omarchy hooks (`~/.config/omarchy/hooks/*.d/soundswap`) | battery-low, theme-set, post-update |
-| Omarchy shutdown, reboot, and logout menu actions | Wait for `shutdown` playback (up to 24 seconds plus a one-second kill grace), then invoke Omarchy's original action even if audio fails. |
+| Omarchy shutdown, reboot, and logout menu actions | Call `soundswap poweroff`, `soundswap reboot`, or `soundswap logout`. Each waits for `shutdown` playback (up to 24 seconds plus a one-second kill grace), then invokes Omarchy's original action even if audio fails. |
 | `soundswap-shutdown.service` | Fallback `ExecStop` playback for lifecycle paths that bypass the menu. Skips a duplicate after successful menu playback and is ordered to stop before PipeWire, WirePlumber, or PulseAudio. |
 
 Device sounds are skipped for 8 seconds after resuming from suspend and never
@@ -162,9 +165,23 @@ it, so adding an event there (plus whatever fires it) is all it takes.
 Omarchy lifecycle helpers, plugin files and registration, the Hyprland loader,
 and user services. It explains missing integrations and only reads system state;
 FAIL exits nonzero, while WARN flags a limitation without failing the check.
+It does not inspect the Omarchy menu override itself.
 
 `soundswap log on`, then `soundswap log` shows every trigger as it
 happens, whether or not a sound file exists for it.
+
+In Omarchy 4.0.4, `omarchy refresh shell` resets the bar layout and
+`omarchy refresh hyprland` replaces the main Lua config. If a reset removes
+SoundSwap's bar entry, Hyprland loader, or menu entries, rerun the installer
+from your SoundSwap checkout in a desktop terminal, then check again:
+
+```bash
+./install.sh
+soundswap doctor
+```
+
+The installer backs up replaced user files and preserves your settings and
+custom sound files.
 
 ### Development checks
 
