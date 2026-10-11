@@ -444,6 +444,16 @@ class CoreTests(unittest.TestCase):
         finally:
             first.communicate(timeout=3)
 
+    def test_rapid_background_previews_do_not_queue_repeated_playback(self):
+        (self.conf / 'sounds/startup.wav').touch()
+        self.backend('printf "played\\n" >> "$HOME/played"; sleep 0.5')
+        for _ in range(5):
+            # Like the panel, do not hold the background player's output open.
+            subprocess.run(['bash', str(ROOT / 'bin/soundswap-play'), '--force', 'startup'], env=self.env,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, check=True)
+        time.sleep(1.5)
+        self.assertEqual((self.home / 'played').read_text().splitlines(), ['played'])
+
 
 if __name__ == '__main__':
     unittest.main()

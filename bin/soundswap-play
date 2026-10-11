@@ -47,7 +47,9 @@ runtime_dir || { echo 'Cannot create private sound runtime directory' >&2; exit 
 play_sound() (
   # Only this event is suppressed; alerts can play beside an input cue.
   exec 9>"$state/$event.lock" || exit 1
-  if [[ $force == 1 || ( $wait == 1 && $event == shutdown ) ]]; then
+  # Waiting callers queue; background previews (the panel) skip a busy event so
+  # rapid clicks cannot stack seconds of repeated playback.
+  if [[ $wait == 1 && ( $force == 1 || $event == shutdown ) ]]; then
     flock -w 12 9 || { log_result overlap busy; echo 'Playback is busy; try again' >&2; exit 75; }
   else
     flock -n 9 || { log_result overlap suppressed; exit 0; }
