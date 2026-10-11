@@ -454,6 +454,13 @@ class CoreTests(unittest.TestCase):
         time.sleep(1.5)
         self.assertEqual((self.home / 'played').read_text().splitlines(), ['played'])
 
+    def test_settings_backups_are_capped(self):
+        for i in range(25):
+            self.assertEqual(self.cli('volume', f'0.{i % 10}').returncode, 0)
+        backups = sorted((self.conf / 'backups').iterdir())
+        self.assertEqual(len(backups), 20)
+        self.assertIn('VOLUME=0.3', backups[-1].read_text())
+
 
 if __name__ == '__main__':
     unittest.main()

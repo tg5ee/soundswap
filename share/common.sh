@@ -99,6 +99,9 @@ setvar() (
   if [[ -f $cfg ]]; then
     mkdir -p -- "$conf/backups" || return 1
     cp -p -- "$cfg" "$conf/backups/config.$EPOCHREALTIME" || return 1
+    # Every panel click saves; keep only the newest 20. Fixed-width epoch names sort by age.
+    local -a old=("$conf"/backups/config.*)
+    (( ${#old[@]} <= 20 )) || rm -f -- "${old[@]:0:${#old[@]}-20}"
   fi
   tmp=$(mktemp "$conf/.config.XXXXXX") || return 1
   trap 'rm -f -- "$tmp"' EXIT
