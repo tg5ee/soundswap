@@ -29,6 +29,7 @@ class CoreTests(unittest.TestCase):
                         XDG_DATA_HOME=str(self.home / '.local/share'), XDG_RUNTIME_DIR=str(self.runtime),
                         PATH=f'{self.bin}:{ROOT / "bin"}:/usr/bin:/bin')
         self.backend('printf "%s\\n" "$@" >> "$HOME/played"')
+        self.fake('logger', 'exit 0')  # lifecycle tests must not write to the real journal
 
     def backend(self, body):
         player = self.bin / 'pw-play'
@@ -87,9 +88,6 @@ class CoreTests(unittest.TestCase):
         stock = self.bin / 'omarchy-system-shutdown'
         stock.write_text('#!/bin/bash\nprintf "poweroff\\n" >> "$HOME/order"\n')
         stock.chmod(0o755)
-        logger = self.bin / 'logger'
-        logger.write_text('#!/bin/bash\nexit 0\n')
-        logger.chmod(0o755)
 
         result = self.cli('poweroff')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -111,9 +109,6 @@ class CoreTests(unittest.TestCase):
         stock = self.bin / 'omarchy-system-shutdown'
         stock.write_text('#!/bin/bash\nexit 7\n')
         stock.chmod(0o755)
-        logger = self.bin / 'logger'
-        logger.write_text('#!/bin/bash\nexit 0\n')
-        logger.chmod(0o755)
 
         self.assertEqual(self.cli('poweroff').returncode, 7)
         self.assertEqual(self.cli('shutdown-stop').returncode, 0)
@@ -165,9 +160,6 @@ class CoreTests(unittest.TestCase):
         stock = self.bin / 'omarchy-system-shutdown'
         stock.write_text('#!/bin/bash\nprintf "poweroff\\n" >> "$HOME/order"\n')
         stock.chmod(0o755)
-        logger = self.bin / 'logger'
-        logger.write_text('#!/bin/bash\nexit 0\n')
-        logger.chmod(0o755)
 
         first = subprocess.Popen(['bash', str(ROOT / 'bin/soundswap-play'), '--wait', 'shutdown'],
                                  env=self.env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
