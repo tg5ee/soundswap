@@ -13,7 +13,7 @@ MAIN="$HYPR/hyprland.lua"
 BIN="$HOME/.local/bin"
 SHARE="$DATA_ROOT/soundswap"
 UNIT_DIR="$CONFIG_ROOT/systemd/user"
-PLUGIN_DIR="$CONFIG_ROOT/omarchy/plugins/soundswap.sounds"
+PLUGIN_DIR="$CONFIG_ROOT/omarchy/plugins/io.github.tg5ee.soundswap"
 MENU="$CONFIG_ROOT/omarchy/extensions/omarchy-menu.jsonc"
 BEGIN='-- soundswap >>>'
 END='-- <<< soundswap'
@@ -32,7 +32,7 @@ OLD_WATCHER_UNITS=(beepboop.service omarchy-sounds.service)
 OLD_SHUTDOWN_UNITS=(beepboop-shutdown.service omarchy-sounds-shutdown.service)
 OLD_BINARIES=(beepboop beepboop-play beepboop-daemon omarchy-sounds omarchy-sounds-play omarchy-sounds-daemon)
 OLD_HOOK_NAMES=(beepboop omarchy-sounds)
-OLD_PLUGIN_IDS=(beepboop.sounds tomg.sounds)
+OLD_PLUGIN_IDS=(soundswap.sounds beepboop.sounds tomg.sounds)
 say() { printf '==> %s\n' "$*"; }
 warn() { printf 'Warning: %s\n' "$*" >&2; }
 fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
@@ -163,7 +163,7 @@ if [[ -f $MENU ]] && (grep -Fxq "$OLDER_MENU_BEGIN" "$MENU" || grep -Fxq "$OLD_M
   mv -f -- "$replacement" "$MENU"
 fi
 if command -v omarchy >/dev/null; then
-  omarchy plugin disable soundswap.sounds || warn 'Widget disabling failed; remove its bar entry manually.'
+  omarchy plugin disable io.github.tg5ee.soundswap || warn 'Widget disabling failed; remove its bar entry manually.'
   for id in "${OLD_PLUGIN_IDS[@]}"; do omarchy plugin disable "$id" 2>/dev/null || true; done
 fi
 # Remove only bundled event files. Unknown files under original/ are retained.

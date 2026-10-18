@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const source = fs.readFileSync(path.join(__dirname, '../plugin/Panel.qml'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../Panel.qml'), 'utf8');
 const functions = [...source.matchAll(/^  function .+\{(?:[^\n]*\}|[\s\S]*?^  \})/gm)].map(m => m[0]).join('\n');
 const status = (enabled = true, volume = .6) => JSON.stringify({ enabled, volume, dir: '/tmp/sounds', events: [{ id: 'click', enabled: true, file: 'click.wav' }] });
 function panel() {
@@ -64,7 +64,7 @@ check('directory changes include renames and no periodic JSON polling', () => {
   assert.doesNotMatch(source, /interval: root\.opened \? 3000 : 20000/);
 });
 check('panel carries the SoundSwap identity and default pack name', () => {
-  assert.match(source, /moduleName: "soundswap\.sounds"/);
+  assert.match(source, /moduleName: "io\.github\.tg5ee\.soundswap"/);
   assert.match(source, /property string packName: "SoundSwap Original"/);
   assert.match(source, /packName = data\.pack \|\| "SoundSwap Original"/);
   assert.match(source, /id: heroLabels\s+anchors\.left: parent\.left\s+anchors\.right: parent\.right\s+anchors\.rightMargin: powerSwitch\.visible \? powerSwitch\.width \+ Style\.space\(8\) : 0/);

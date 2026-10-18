@@ -19,8 +19,8 @@ import qs.Ui
 // so new events show up here without touching this file.
 Panel {
   id: root
-  moduleName: "soundswap.sounds"
-  ipcTarget: "soundswap.sounds"
+  moduleName: "io.github.tg5ee.soundswap"
+  ipcTarget: "io.github.tg5ee.soundswap"
   // manageIpc: false so this panel can own the single IpcHandler the target
   // permits — needed for the toggleSounds method below.
   manageIpc: false
@@ -279,7 +279,7 @@ Panel {
   }
 
   IpcHandler {
-    target: "soundswap.sounds"
+    target: "io.github.tg5ee.soundswap"
 
     function open() { root.open() }
     function close() { root.close() }

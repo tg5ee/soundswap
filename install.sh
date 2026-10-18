@@ -16,7 +16,7 @@ MAIN="$HYPR/hyprland.lua"
 UNIT_DIR="$CONFIG_ROOT/systemd/user"
 SHARE="$DATA_ROOT/soundswap"
 HOOKS="$CONFIG_ROOT/omarchy/hooks"
-PLUGIN_ID=soundswap.sounds
+PLUGIN_ID=io.github.tg5ee.soundswap
 PLUGIN_DIR="$CONFIG_ROOT/omarchy/plugins/$PLUGIN_ID"
 MENU="$CONFIG_ROOT/omarchy/extensions/omarchy-menu.jsonc"
 BEGIN='-- soundswap >>>'
@@ -36,7 +36,7 @@ OLD_WATCHER_UNITS=(beepboop.service omarchy-sounds.service)
 OLD_SHUTDOWN_UNITS=(beepboop-shutdown.service omarchy-sounds-shutdown.service)
 OLD_BINARIES=(beepboop beepboop-play beepboop-daemon omarchy-sounds omarchy-sounds-play omarchy-sounds-daemon)
 OLD_HOOK_NAMES=(beepboop omarchy-sounds)
-OLD_PLUGIN_IDS=(beepboop.sounds tomg.sounds)
+OLD_PLUGIN_IDS=(soundswap.sounds beepboop.sounds tomg.sounds)
 say() { printf '==> %s\n' "$*"; }
 warn() { printf 'Warning: %s\n' "$*" >&2; }
 fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
@@ -126,7 +126,7 @@ if [[ -f $MENU ]]; then
   marker_count "$MENU" "$OLDER_MENU_BEGIN" "$OLDER_MENU_END" >/dev/null || fail 'Malformed omarchy-sounds shutdown menu markers; preserve the menu and repair the marker block first.'
 fi
 
-for file in bin/soundswap bin/soundswap-play bin/soundswap-daemon share/common.sh share/events.tsv config.default hypr/soundswap.lua plugin/manifest.json plugin/Panel.qml plugin/soundswap.svg sounds/README.md; do
+for file in bin/soundswap bin/soundswap-play bin/soundswap-daemon share/common.sh share/events.tsv config.default hypr/soundswap.lua manifest.json Panel.qml soundswap.svg sounds/README.md; do
   [[ -f $SRC/$file && -r $SRC/$file ]] || fail "Missing source file: $file"
 done
 dupes=$(grep -o '^[A-Z_]*=' "$SRC/config.default" | sort | uniq -d | tr -d =)
@@ -311,13 +311,7 @@ for hook in battery-low theme-set post-update; do
   done
 done
 backup "$CONFIG_ROOT/omarchy/shell.json"
-for id in "${OLD_PLUGIN_IDS[@]}"; do
-  command -v omarchy >/dev/null && omarchy plugin disable "$id" 2>/dev/null || true
-  if [[ -d $CONFIG_ROOT/omarchy/plugins/$id ]]; then
-    backup "$CONFIG_ROOT/omarchy/plugins/$id"
-    rm -rf -- "$CONFIG_ROOT/omarchy/plugins/$id"
-  fi
-done
+# Old plugin IDs (including soundswap.sounds) are retired below, only after the new widget is active.
 [[ -f $HYPR/beepboop.lua ]] && { backup "$HYPR/beepboop.lua"; rm -f -- "$HYPR/beepboop.lua"; }
 [[ -f $HYPR/omarchy_sounds.lua ]] && { backup "$HYPR/omarchy_sounds.lua"; rm -f -- "$HYPR/omarchy_sounds.lua"; }
 
@@ -383,9 +377,9 @@ done < "$SRC/share/events.tsv"
 for hook in battery-low theme-set post-update; do put "$SRC/hooks/$hook" "$HOOKS/$hook.d/soundswap" 755; done
 panel_changed=0
 for name in Panel.qml soundswap.svg; do
-  [[ ! -f $PLUGIN_DIR/$name ]] || cmp -s "$SRC/plugin/$name" "$PLUGIN_DIR/$name" || panel_changed=1
+  [[ ! -f $PLUGIN_DIR/$name ]] || cmp -s "$SRC/$name" "$PLUGIN_DIR/$name" || panel_changed=1
 done
-for name in manifest.json Panel.qml soundswap.svg; do put "$SRC/plugin/$name" "$PLUGIN_DIR/$name" 644; done
+for name in manifest.json Panel.qml soundswap.svg; do put "$SRC/$name" "$PLUGIN_DIR/$name" 644; done
 
 unit_escape() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; printf '%s' "${s//%/%%}"; }
 for unit in "${UNITS[@]}"; do
@@ -408,9 +402,10 @@ systemctl --user enable "${UNITS[@]}"
 systemctl --user start soundswap-shutdown.service
 systemctl --user restart soundswap.service
 
+new_widget_active=0
 if command -v omarchy-shell >/dev/null && timeout 5 omarchy-shell shell listPlugins >/dev/null 2>&1; then
   if ! timeout 5 omarchy-shell shell rescanPlugins >/dev/null; then warn 'Widget rescan failed; reload the Omarchy shell when convenient.'; fi
-  if ! grep -q '"soundswap.sounds"' "$CONFIG_ROOT/omarchy/shell.json" 2>/dev/null; then
+  if ! grep -Fq "\"$PLUGIN_ID\"" "$CONFIG_ROOT/omarchy/shell.json" 2>/dev/null; then
     backup "$CONFIG_ROOT/omarchy/shell.json"
     if command -v omarchy >/dev/null; then
       omarchy plugin enable "$PLUGIN_ID" || warn "Widget enabling failed; enable it later: omarchy plugin enable $PLUGIN_ID"
@@ -418,8 +413,23 @@ if command -v omarchy-shell >/dev/null && timeout 5 omarchy-shell shell listPlug
       warn "Enable the widget later: omarchy plugin enable $PLUGIN_ID"
     fi
   fi
+  grep -Fq "\"$PLUGIN_ID\"" "$CONFIG_ROOT/omarchy/shell.json" 2>/dev/null && new_widget_active=1
   (( ! panel_changed )) || warn 'If the updated panel still appears unchanged, restart the Omarchy shell when convenient.'
 else
   warn "Enable the widget from your desktop later: omarchy plugin enable $PLUGIN_ID"
+fi
+# Retire old plugin IDs only after the new widget is registered; otherwise keep them so the bar is never left without one.
+for id in "${OLD_PLUGIN_IDS[@]}"; do
+  [[ -d $CONFIG_ROOT/omarchy/plugins/$id ]] || continue
+  if (( ! new_widget_active )); then
+    warn "Kept legacy widget $id because $PLUGIN_ID is not active yet. Run: omarchy plugin enable $PLUGIN_ID, then rerun ./install.sh to retire $id."
+    continue
+  fi
+  command -v omarchy >/dev/null && omarchy plugin disable "$id" 2>/dev/null || true
+  backup "$CONFIG_ROOT/omarchy/plugins/$id"
+  rm -rf -- "$CONFIG_ROOT/omarchy/plugins/$id"
+done
+if (( new_widget_active )); then
+  say "Widget ID is now $PLUGIN_ID. If the bar still shows an old SoundSwap entry, move the new one with: omarchy bar move $PLUGIN_ID --section left|center|right"
 fi
 say "Done. Settings and sounds preserved in $CONF; inspect with soundswap status."

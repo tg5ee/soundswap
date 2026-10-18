@@ -32,7 +32,8 @@ USAGE
 
 doctor() {
   local failed=0 tool player='' config_root=${XDG_CONFIG_HOME:-$HOME/.config}
-  local plugin_dir="$config_root/omarchy/plugins/soundswap.sounds"
+  local plugin_id=io.github.tg5ee.soundswap legacy_id=soundswap.sounds
+  local plugin_dir="$config_root/omarchy/plugins/$plugin_id"
   local shell_config="$config_root/omarchy/shell.json"
   local menu="$config_root/omarchy/extensions/omarchy-menu.jsonc"
   local hypr_dir="$config_root/hypr" main="$config_root/hypr/hyprland.lua"
@@ -87,26 +88,29 @@ doctor() {
     fi
   done
   if [[ -r $plugin_dir/manifest.json ]] &&
-      grep -Fq '"id": "soundswap.sounds"' "$plugin_dir/manifest.json" &&
+      grep -Fq "\"id\": \"$plugin_id\"" "$plugin_dir/manifest.json" &&
       grep -Fq '"bar-widget"' "$plugin_dir/manifest.json" &&
       grep -Fq '"barWidget": "Panel.qml"' "$plugin_dir/manifest.json"; then
     report PASS 'plugin manifest identifies the SoundSwap bar widget'
   else
     report FAIL "plugin manifest is invalid or incomplete: $plugin_dir/manifest.json. Reinstall SoundSwap with ./install.sh"
   fi
-  if [[ -r $shell_config ]] && grep -Eq '"id"[[:space:]]*:[[:space:]]*"soundswap.sounds"' "$shell_config"; then
-    report PASS 'bar layout registers soundswap.sounds'
+  if [[ -r $shell_config ]] && grep -Eq "\"id\"[[:space:]]*:[[:space:]]*\"$plugin_id\"" "$shell_config"; then
+    report PASS "bar layout registers $plugin_id"
   else
-    report FAIL "bar widget is not registered in $shell_config. Enable it with: omarchy plugin enable soundswap.sounds"
+    report FAIL "bar widget is not registered in $shell_config. Enable it with: omarchy plugin enable $plugin_id"
+  fi
+  if [[ -d $config_root/omarchy/plugins/$legacy_id ]]; then
+    report WARN "legacy widget $legacy_id is still installed. Enable $plugin_id, then rerun ./install.sh to retire it"
   fi
   if command -v omarchy-shell >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then
     if plugins=$(timeout 5 omarchy-shell shell listPlugins 2>/dev/null); then
-      if grep -Eq '"id"[[:space:]]*:[[:space:]]*"soundswap.sounds"[^}]*"enabled"[[:space:]]*:[[:space:]]*true' <<< "$plugins"; then
+      if grep -Eq "\"id\"[[:space:]]*:[[:space:]]*\"$plugin_id\"[^}]*\"enabled\"[[:space:]]*:[[:space:]]*true" <<< "$plugins"; then
         report PASS 'Omarchy plugin registry reports the SoundSwap widget enabled'
-      elif grep -Eq '"id"[[:space:]]*:[[:space:]]*"soundswap.sounds"' <<< "$plugins"; then
-        report FAIL 'bar widget is disabled in the Omarchy plugin registry. Enable it with: omarchy plugin enable soundswap.sounds'
+      elif grep -Eq "\"id\"[[:space:]]*:[[:space:]]*\"$plugin_id\"" <<< "$plugins"; then
+        report FAIL "bar widget is disabled in the Omarchy plugin registry. Enable it with: omarchy plugin enable $plugin_id"
       else
-        report FAIL 'SoundSwap is missing from the Omarchy plugin registry. Reinstall with ./install.sh, then enable soundswap.sounds'
+        report FAIL "SoundSwap is missing from the Omarchy plugin registry. Reinstall with ./install.sh, then enable $plugin_id"
       fi
     else
       report WARN 'could not query the Omarchy plugin registry. Run soundswap doctor from an active Omarchy session'

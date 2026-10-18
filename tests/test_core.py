@@ -46,14 +46,14 @@ class CoreTests(unittest.TestCase):
     def doctor_setup(self, plugin_enabled=True, bar_registered=True, loader=True,
                      missing_lifecycle=()):
         omarchy = self.conf.parent / 'omarchy'
-        plugin = omarchy / 'plugins/soundswap.sounds'
+        plugin = omarchy / 'plugins/io.github.tg5ee.soundswap'
         plugin.mkdir(parents=True)
-        (plugin / 'manifest.json').write_text((ROOT / 'plugin/manifest.json').read_text())
+        (plugin / 'manifest.json').write_text((ROOT / 'manifest.json').read_text())
         (plugin / 'Panel.qml').write_text('')
         (plugin / 'soundswap.svg').write_text('')
-        layout_id = '{"id": "soundswap.sounds"}' if bar_registered else '{"id": "omarchy.tray"}'
+        layout_id = '{"id": "io.github.tg5ee.soundswap"}' if bar_registered else '{"id": "omarchy.tray"}'
         (omarchy / 'shell.json').write_text('{"bar":{"layout":{"right":[' + layout_id + ']}}}\n')
-        listing = '[{"id":"soundswap.sounds","kinds":["bar-widget"],"enabled":' + str(plugin_enabled).lower() + '}]'
+        listing = '[{"id":"io.github.tg5ee.soundswap","kinds":["bar-widget"],"enabled":' + str(plugin_enabled).lower() + '}]'
         self.fake('omarchy-shell', f'printf \'%s\\n\' \'{listing}\'')
         for lifecycle in ('shutdown', 'reboot', 'logout'):
             if lifecycle not in missing_lifecycle:
@@ -311,7 +311,14 @@ class CoreTests(unittest.TestCase):
         self.assertIn('FAIL: bar widget is not registered in', result.stdout)
         self.assertIn('FAIL: bar widget is disabled', result.stdout)
         self.assertIn('FAIL: Hyprland loader', result.stdout)
-        self.assertIn('omarchy plugin enable soundswap.sounds', result.stdout)
+        self.assertIn('omarchy plugin enable io.github.tg5ee.soundswap', result.stdout)
+
+    def test_doctor_warns_about_lingering_legacy_widget(self):
+        self.doctor_setup()
+        (self.conf.parent / 'omarchy/plugins/soundswap.sounds').mkdir()
+        result = self.cli('doctor')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('WARN: legacy widget soundswap.sounds is still installed', result.stdout)
 
     def test_doctor_passes_with_installed_integrations(self):
         self.doctor_setup()
@@ -341,7 +348,7 @@ class CoreTests(unittest.TestCase):
 
     def test_doctor_reports_missing_plugin_and_user_service_without_changes(self):
         self.doctor_setup()
-        plugin = self.conf.parent / 'omarchy/plugins/soundswap.sounds'
+        plugin = self.conf.parent / 'omarchy/plugins/io.github.tg5ee.soundswap'
         (plugin / 'Panel.qml').unlink()
         unit = self.conf.parent / 'systemd/user/soundswap.service'
         unit.unlink()

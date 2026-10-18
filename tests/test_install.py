@@ -33,12 +33,15 @@ class InstallTests(unittest.TestCase):
                 body += '[ "$1" != reload ] || [ "${RELOAD_FAIL:-0}" = 0 ] || exit 9\n'
                 body += '[ "$1" != configerrors ] || exit 0\n'
             if name == 'omarchy':
-                body += ('if [[ "$*" == "plugin enable soundswap.sounds" && '
-                         '"${OMARCHY_ENABLE_FAIL:-0}" = 1 ]]; then\n'
+                # Enabling registers the widget in shell.json, as the real CLI does.
+                # OMARCHY_ENABLE_FAIL registers it but exits nonzero; OMARCHY_ENABLE_NOOP
+                # fails without registering anything.
+                body += ('if [[ "$*" == "plugin enable io.github.tg5ee.soundswap" ]]; then\n'
+                         '  [ "${OMARCHY_ENABLE_NOOP:-0}" = 0 ] || exit 9\n'
                          '  mkdir -p "$XDG_CONFIG_HOME/omarchy"\n'
-                         '  printf \'{"plugins":[{"id":"soundswap.sounds"}]}\\n\' > '
+                         '  printf \'{"plugins":[{"id":"io.github.tg5ee.soundswap"}]}\\n\' > '
                          '"$XDG_CONFIG_HOME/omarchy/shell.json"\n'
-                         '  exit 9\n'
+                         '  [ "${OMARCHY_ENABLE_FAIL:-0}" = 0 ] || exit 9\n'
                          'fi\n')
             script = self.tools / name
             script.write_text('#!/bin/bash\n' + body)
@@ -319,8 +322,8 @@ class InstallTests(unittest.TestCase):
                  self.config / 'soundswap/config',
                  self.config / 'systemd/user/soundswap.service',
                  self.config / 'omarchy/hooks/battery-low.d/soundswap',
-                 self.config / 'omarchy/plugins/soundswap.sounds/Panel.qml',
-                 self.config / 'omarchy/plugins/soundswap.sounds/soundswap.svg',
+                 self.config / 'omarchy/plugins/io.github.tg5ee.soundswap/Panel.qml',
+                 self.config / 'omarchy/plugins/io.github.tg5ee.soundswap/soundswap.svg',
                  self.home / '.local/bin/soundswap']
         originals = {}
         for i, file in enumerate(files):
@@ -352,7 +355,8 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.main.parent / 'soundswap.lua').is_file())
         self.assertIn('dofile', self.main.read_text())
-        plugin = self.config / 'omarchy/plugins/soundswap.sounds'
+        plugin = self.config / 'omarchy/plugins/io.github.tg5ee.soundswap'
+        self.assertTrue((plugin / 'manifest.json').is_file())
         self.assertTrue((plugin / 'Panel.qml').is_file())
         self.assertTrue((plugin / 'soundswap.svg').is_file())
         self.assertIn('Qt.resolvedUrl("soundswap.svg")', (plugin / 'Panel.qml').read_text())
@@ -484,7 +488,7 @@ class InstallTests(unittest.TestCase):
         result = self.run_script('install.sh')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Widget enabling failed', result.stderr)
-        self.assertIn('soundswap.sounds', (self.config / 'omarchy/shell.json').read_text())
+        self.assertIn('io.github.tg5ee.soundswap', (self.config / 'omarchy/shell.json').read_text())
         custom = self.config / 'soundswap/sounds/custom.wav'
         custom.parent.mkdir(parents=True, exist_ok=True)
         custom.write_bytes(b'user sound')
@@ -531,7 +535,7 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.main.write_text(self.main.read_text() + 'keep_after = true\n\n')
         extras = [self.data / 'soundswap/custom.txt',
-                  self.config / 'omarchy/plugins/soundswap.sounds/custom.qml',
+                  self.config / 'omarchy/plugins/io.github.tg5ee.soundswap/custom.qml',
                   self.config / 'soundswap/sounds/custom.wav']
         for file in extras:
             file.write_bytes(b'keep')
@@ -544,7 +548,7 @@ class InstallTests(unittest.TestCase):
         self.assertFalse((self.home / '.local/bin/soundswap').exists())
         self.assertFalse((self.data / 'soundswap/common.sh').exists())
         self.assertFalse((self.data / 'soundswap/original').exists())
-        self.assertFalse((self.config / 'omarchy/plugins/soundswap.sounds/soundswap.svg').exists())
+        self.assertFalse((self.config / 'omarchy/plugins/io.github.tg5ee.soundswap/soundswap.svg').exists())
 
     def test_invalid_uninstall_validation_retains_installation(self):
         self.assertEqual(self.run_script('install.sh').returncode, 0)
@@ -688,6 +692,43 @@ class InstallTests(unittest.TestCase):
         reset = next(line for line in self.calls().splitlines() if 'reset-failed' in line)
         self.assertIn('beepboop-shutdown.service', reset)
         self.assertFalse((self.home / 'chimes').exists())
+
+    def test_legacy_soundswap_sounds_plugin_retired_after_new_widget_enabled(self):
+        legacy = self.config / 'omarchy/plugins/soundswap.sounds'
+        legacy.mkdir(parents=True)
+        (legacy / 'Panel.qml').write_text('legacy panel\n')
+        result = self.run_script('install.sh')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(legacy.exists())
+        self.assertTrue((self.config / 'omarchy/plugins/io.github.tg5ee.soundswap/Panel.qml').is_file())
+        calls = self.calls()
+        self.assertLess(calls.index('plugin enable io.github.tg5ee.soundswap'),
+                        calls.index('plugin disable soundswap.sounds'))
+        backed_up = [p.read_bytes() for p in (self.state / 'soundswap/backups').rglob('Panel.qml')]
+        self.assertIn(b'legacy panel\n', backed_up)
+
+    def test_legacy_plugin_kept_when_new_widget_cannot_be_enabled(self):
+        self.env['OMARCHY_ENABLE_NOOP'] = '1'
+        legacy = self.config / 'omarchy/plugins/soundswap.sounds'
+        legacy.mkdir(parents=True)
+        (legacy / 'Panel.qml').write_text('legacy panel\n')
+        result = self.run_script('install.sh')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Widget enabling failed', result.stderr)
+        self.assertIn('Kept legacy widget soundswap.sounds', result.stderr)
+        self.assertTrue((legacy / 'Panel.qml').is_file())
+        self.assertNotIn('plugin disable soundswap.sounds', self.calls())
+
+    def test_uninstall_removes_new_and_legacy_widgets(self):
+        legacy = self.config / 'omarchy/plugins/soundswap.sounds'
+        self.assertEqual(self.run_script('install.sh').returncode, 0)
+        legacy.mkdir(parents=True)
+        (legacy / 'Panel.qml').write_text('legacy panel\n')
+        result = self.run_script('uninstall.sh')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(legacy.exists())
+        self.assertFalse((self.config / 'omarchy/plugins/io.github.tg5ee.soundswap/Panel.qml').exists())
+        self.assertIn('plugin disable io.github.tg5ee.soundswap', self.calls())
 
     def test_original_pack_is_preserved_separately_from_customizable_copies(self):
         conf = self.config / 'soundswap/sounds'

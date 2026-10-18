@@ -10,6 +10,19 @@ The integration paths below were checked against Omarchy 4.0.4.
 
 ## Install
 
+### Marketplace (widget only) vs `./install.sh` (full integration)
+
+The repository root is the marketplace plugin: `manifest.json` (plugin ID
+`io.github.tg5ee.soundswap`, kind `bar-widget`), `Panel.qml`, `soundswap.svg`,
+and `preview.png`. Installing from the Omarchy marketplace installs **only the
+bar widget**. It cannot add the systemd user services, Hyprland event hooks,
+Omarchy hooks, shutdown/reboot/logout menu entries, the `soundswap` CLI, or the
+bundled sounds, so most events stay silent until you run `./install.sh` from a
+checkout (below). The installer is the full integration and registers the same
+widget itself, so the marketplace step is optional. Neither path uses `sudo`.
+
+### Full install
+
 Run this from a terminal inside your Omarchy desktop session. The installer
 configures the Hyprland event hooks, bar widget, user services, Omarchy menu
 shutdown, reboot, and logout actions, and bundled sounds. It needs no manual
@@ -105,13 +118,28 @@ with the same panel kit as Omarchy's Audio and Bluetooth panels.
 - **Right click**: turn all sounds on/off
 - **Middle click**: open the sounds folder
 
-![SoundSwap bar widget showing the settings panel](docs/soundswap-panel.png)
+![SoundSwap bar widget showing the settings panel](preview.png)
 
 Keyboard, with the panel open: arrows move, Enter toggles, ←/→ change volume,
 `p` previews the selected sound, `s` turns everything on/off, `o` opens the folder.
 
-Move it with `omarchy bar move soundswap.sounds --section left|center|right`.
-From scripts: `omarchy-shell soundswap.sounds toggleSounds`.
+Move it with `omarchy bar move io.github.tg5ee.soundswap --section left|center|right`.
+From scripts: `omarchy-shell io.github.tg5ee.soundswap toggleSounds`.
+
+The widget ID is `io.github.tg5ee.soundswap`. Earlier releases used
+`soundswap.sounds`. The installer enables the new widget first and retires the
+old `soundswap.sounds` plugin (plus the BeepBoop-era `beepboop.sounds` and
+`tomg.sounds`) only once the new one is registered, so the bar is never left
+without it. If enabling fails, the old widget is kept; run
+`omarchy plugin enable io.github.tg5ee.soundswap`, then rerun `./install.sh`.
+Update any scripts that call `omarchy-shell soundswap.sounds ...`.
+
+## License
+
+SoundSwap's code, configuration, documentation, and artwork are MIT licensed
+(see [`LICENSE`](LICENSE)). The bundled audio in `sounds/` is **excluded** from
+that license and remains subject to its owners' terms; see
+[`sounds/SOURCES.md`](sounds/SOURCES.md).
 
 The icon is a compact switching mark with opposing audio-wave arcs. It contains
 no robot mascot or generic music-note decoration.
