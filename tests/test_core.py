@@ -29,6 +29,7 @@ class CoreTests(unittest.TestCase):
                         XDG_DATA_HOME=str(self.home / '.local/share'), XDG_RUNTIME_DIR=str(self.runtime),
                         PATH=f'{self.bin}:{ROOT / "bin"}:/usr/bin:/bin')
         self.backend('printf "%s\\n" "$@" >> "$HOME/played"')
+        self.fake('omarchy-system', 'exit 127')
         self.fake('logger', 'exit 0')  # lifecycle tests must not write to the real journal
 
     def backend(self, body):
@@ -45,6 +46,7 @@ class CoreTests(unittest.TestCase):
 
     def doctor_setup(self, plugin_enabled=True, bar_registered=True, loader=True,
                      missing_lifecycle=()):
+        (self.bin / 'omarchy-system').unlink(missing_ok=True)
         omarchy = self.conf.parent / 'omarchy'
         plugin = omarchy / 'plugins/io.github.tg5ee.soundswap'
         plugin.mkdir(parents=True)
@@ -81,6 +83,29 @@ class CoreTests(unittest.TestCase):
         script = self.bin / name
         script.write_text('#!/bin/bash\n' + body + '\n')
         script.chmod(0o755)
+
+    def test_omarchy45_lifecycle_uses_unified_helper_after_playback(self):
+        (self.conf / 'sounds/shutdown.wav').touch()
+        self.backend('printf "played\\n" >> "$HOME/order"')
+        self.fake('omarchy-system', 'printf "%s\\n" "$*" >> "$HOME/order"')
+        for action in ('poweroff', 'reboot', 'logout'):
+            result = self.cli(action)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.home / 'order').read_text().splitlines(),
+                         ['played', 'shutdown', 'played', 'reboot', 'played', 'logout'])
+
+    def test_unified_lifecycle_failure_clears_playback_marker(self):
+        (self.conf / 'sounds/shutdown.wav').touch()
+        self.backend('exit 0')
+        self.fake('omarchy-system', 'exit 7')
+        self.assertEqual(self.cli('poweroff').returncode, 7)
+        self.assertFalse((self.runtime / 'soundswap/shutdown.preplayed').exists())
+
+    def test_doctor_accepts_unified_lifecycle_helper(self):
+        self.doctor_setup(missing_lifecycle=('shutdown', 'reboot', 'logout'))
+        self.fake('omarchy-system', 'exit 0')
+        result = self.cli('doctor')
+        self.assertNotIn('is unavailable; its SoundSwap menu action', result.stdout)
 
     def test_poweroff_plays_before_stock_command_and_skips_stop_duplicate(self):
         (self.conf / 'sounds/shutdown.wav').touch()

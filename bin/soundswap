@@ -70,6 +70,8 @@ doctor() {
     local action="omarchy-system-$lifecycle"
     if command -v "$action" >/dev/null 2>&1; then
       report PASS "Omarchy lifecycle command is available: $action"
+    elif command -v omarchy-system >/dev/null 2>&1; then
+      report PASS "Omarchy lifecycle command is available: omarchy-system $lifecycle"
     else
       report WARN "$action is unavailable; its SoundSwap menu action cannot invoke Omarchy's original action. Check your Omarchy installation and restore the helper"
     fi
@@ -254,13 +256,17 @@ case "${1:-}" in
   poweroff|reboot|logout)
     lifecycle=$1
     case $lifecycle in
-      poweroff) stock_action=omarchy-system-shutdown ;;
-      reboot) stock_action=omarchy-system-reboot ;;
-      logout) stock_action=omarchy-system-logout ;;
+      poweroff) action=shutdown ;;
+      reboot) action=reboot ;;
+      logout) action=logout ;;
     esac
+    stock_action=("omarchy-system-$action")
+    if ! command -v "${stock_action[0]}" >/dev/null 2>&1; then
+      stock_action=(omarchy-system "$action")
+    fi
     if ! runtime_dir; then
       [[ $lifecycle == poweroff ]] && exit 1
-      "$stock_action"
+      "${stock_action[@]}"
       exit $?
     fi
     if [[ $lifecycle == poweroff ]]; then
@@ -283,7 +289,7 @@ case "${1:-}" in
       playback_status=$?
       logger -t soundswap "shutdown early-failed status=$playback_status" || true
     fi
-    if "$stock_action"; then
+    if "${stock_action[@]}"; then
       exit 0
     else
       shutdown_status=$?

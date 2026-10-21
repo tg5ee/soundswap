@@ -6,7 +6,17 @@ SoundSwap is a lightweight, customizable system sound manager for Omarchy Linux.
 It includes the curated **SoundSwap Original** collection and lets you replace
 any event sound with your own file. Its 27 events cover desktop, device, power,
 notification, and Omarchy lifecycle actions.
-The integration paths below were checked against Omarchy 4.0.4.
+
+Omarchy 4.0.4 remains the established compatibility baseline. This update adds
+lifecycle command compatibility for **Omarchy 4.5.0rc1**: SoundSwap supports both
+4.0.4's separate lifecycle helpers and the RC's unified
+`omarchy-system <logout|reboot|shutdown>` helper. Playback still finishes before
+SoundSwap invokes the selected action.
+
+On 4.5.0rc1, runtime diagnostics, playback commands, and panel IPC were checked.
+Actual logout, reboot, and shutdown were not exercised. Full installation on the
+tested RC setup remains blocked by a Hyprland `--verify-config` subprocess crash;
+the installer stops before replacing installed files when validation fails.
 
 ## Install
 
