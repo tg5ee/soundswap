@@ -356,12 +356,14 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     iconComponent: Component {
-      Image {
-        anchors.fill: parent
-        source: Qt.resolvedUrl("soundswap.svg")
-        sourceSize.width: 48
-        sourceSize.height: 48
-        fillMode: Image.PreserveAspectFit
+      Item {
+        Image {
+          anchors.fill: parent
+          source: Qt.resolvedUrl("soundswap.svg")
+          sourceSize.width: 48
+          sourceSize.height: 48
+          fillMode: Image.PreserveAspectFit
+        }
       }
     }
     dimmed: !root.installed

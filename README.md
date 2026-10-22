@@ -18,6 +18,10 @@ Actual logout, reboot, and shutdown were not exercised. Full installation on the
 tested RC setup remains blocked by a Hyprland `--verify-config` subprocess crash;
 the installer stops before replacing installed files when validation fails.
 
+The bar icon uses a sized `Item` wrapper around its SVG image to support the
+current shell's optical icon renderer; anchoring the image directly to its
+loader can leave it at zero size.
+
 ## Install
 
 ### Marketplace (widget only) vs `./install.sh` (full integration)
